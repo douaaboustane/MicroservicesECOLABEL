@@ -21,14 +21,45 @@ class MicroserviceClient:
         filename: str
     ) -> Dict[str, Any]:
         """Appelle le Parser Service pour OCR et extraction"""
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            files = {"file": (filename, image_file, "image/jpeg")}
-            response = await client.post(
-                f"{self.parser_url}/product/parse/single",
-                files=files
-            )
-            response.raise_for_status()
-            return response.json()
+        try:
+            # Déterminer le type MIME basé sur l'extension
+            file_ext = filename.split('.')[-1].lower() if '.' in filename else 'jpg'
+            mime_type_map = {
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'bmp': 'image/bmp',
+                'tiff': 'image/tiff',
+                'pdf': 'application/pdf'
+            }
+            mime_type = mime_type_map.get(file_ext, 'image/jpeg')
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                files = {"file": (filename, image_file, mime_type)}
+                response = await client.post(
+                    f"{self.parser_url}/product/parse/single",
+                    files=files
+                )
+                
+                # Si erreur, logger les détails avant de lever l'exception
+                if response.status_code != 200:
+                    error_detail = response.text
+                    print(f"❌ Erreur Parser Service ({response.status_code}): {error_detail}")
+                    try:
+                        error_json = response.json()
+                        error_detail = error_json.get('detail', error_detail)
+                    except:
+                        pass
+                
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            error_msg = f"Parser Service error {e.response.status_code}: {e.response.text}"
+            print(f"❌ {error_msg}")
+            raise Exception(error_msg) from e
+        except Exception as e:
+            print(f"❌ Erreur lors de l'appel au Parser Service: {str(e)}")
+            raise
     
     async def call_nlp_service(
         self,
@@ -58,18 +89,59 @@ class MicroserviceClient:
         product_weight_kg: float = 1.0
     ) -> Dict[str, Any]:
         """Appelle le LCA Service pour calcul d'impacts"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{self.lca_url}/lca/calc",
-                json={
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Préparer le payload (packaging peut être None, pas un dict vide)
+                payload = {
                     "ingredients": ingredients,
-                    "packaging": packaging or {},
-                    "transport": transport or {},
                     "product_weight_kg": product_weight_kg
                 }
-            )
-            response.raise_for_status()
-            return response.json()
+                if packaging:
+                    payload["packaging"] = packaging
+                if transport:
+                    payload["transport"] = transport
+                
+                print(f"📤 LCA Request payload: {payload}")
+                
+                response = await client.post(
+                    f"{self.lca_url}/lca/calc",
+                    json=payload
+                )
+                
+                # Si erreur, logger les détails avant de lever l'exception
+                if response.status_code != 200:
+                    error_detail = response.text
+                    print(f"ERROR LCA Service ({response.status_code}): {error_detail}")
+                    try:
+                        error_json = response.json()
+                        error_detail = error_json.get('detail', error_detail)
+                        if isinstance(error_detail, list):
+                            # Erreurs de validation Pydantic
+                            error_detail = "; ".join([str(e) for e in error_detail])
+                        print(f"ERROR LCA Service detail: {error_detail}")
+                    except Exception as e:
+                        print(f"ERROR parsing LCA error response: {e}")
+                        print(f"ERROR raw response: {response.text[:500]}")
+                
+                response.raise_for_status()
+                return response.json()
+        except httpx.HTTPStatusError as e:
+            error_msg = f"LCA Service error {e.response.status_code}: {e.response.text}"
+            if e.response.status_code == 422:
+                try:
+                    error_json = e.response.json()
+                    detail = error_json.get('detail', 'Validation error')
+                    if isinstance(detail, list):
+                        detail = "; ".join([str(d) for d in detail])
+                    error_msg = f"Erreur de validation LCA Service: {detail}"
+                except:
+                    pass
+            print(f"❌ {error_msg}")
+            raise ValueError(error_msg) from e
+        except httpx.RequestError as e:
+            raise ValueError(f"Erreur de connexion au LCA Service: {str(e)}") from e
+        except Exception as e:
+            raise ValueError(f"Erreur inattendue lors de l'appel au LCA Service: {str(e)}") from e
     
     async def call_scoring_service(
         self,

@@ -85,7 +85,7 @@ async def parse_products(
             # Fallback sur extraction basique si NER ne trouve rien
             ingredients = parsed_data.get("ingredients_raw") or ingredients_ner or text_cleaner.extract_ingredients(text)
             
-            packaging = parsed_data.get("packaging_info") or text_cleaner.extract_packaging(text)
+            packaging = parsed_data.get("packaging_info") or text_cleaner.extract_packaging_info(text)
             
             # GTIN
             gtin = parsed_data.get("gtin")
@@ -188,7 +188,7 @@ async def parse_single_product(
         # Fallback sur extraction basique si NER ne trouve rien
         ingredients = parsed_data.get("ingredients_raw") or ingredients_ner or text_cleaner.extract_ingredients(text)
         
-        packaging = parsed_data.get("packaging_info") or text_cleaner.extract_packaging(text)
+        packaging = parsed_data.get("packaging_info") or text_cleaner.extract_packaging_info(text)
         
         # GTIN
         gtin = parsed_data.get("gtin")
@@ -234,6 +234,10 @@ async def parse_single_product(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Erreur lors du parsing: {str(e)}")
+        print(f"📋 Traceback complet:\n{error_trace}")
         raise HTTPException(status_code=500, detail=f"Erreur lors du parsing: {str(e)}")
     finally:
         # Nettoyer le fichier temporaire
