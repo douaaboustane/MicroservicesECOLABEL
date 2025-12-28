@@ -1,10 +1,13 @@
 """
 API FastAPI pour le service LCALite
 """
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
+import json
 
 from app.config import settings
 from app.database import get_db, engine, Base
@@ -29,6 +32,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Handler d'exception supprimé - cause des erreurs "RuntimeError: Unexpected message received"
+# Les erreurs de validation seront loggées directement dans l'endpoint avant la validation Pydantic
+# FastAPI gère automatiquement les erreurs de validation avec son handler par défaut
+
+# Middleware supprimé - cause des erreurs "peer closed connection"
+# Les logs seront faits directement dans l'endpoint
 
 # Initialiser le service LCA
 lca_service = LCAService()
@@ -79,11 +89,50 @@ async def calculate_lca(
     
     Retourne les impacts environnementaux (CO2, eau, énergie, etc.)
     """
+    # Log immédiatement pour voir si on arrive ici
+    import json
+    print(f"\n{'='*80}", flush=True)
+    print(f"LCA endpoint called with {len(request.ingredients)} ingredients", flush=True)
+    
+    # Log du payload complet
     try:
+        payload_dict = {
+            "ingredients": [ing.dict() for ing in request.ingredients],
+            "packaging": request.packaging.dict() if request.packaging else None,
+            "transport": request.transport.dict() if request.transport else None,
+            "product_weight_kg": request.product_weight_kg
+        }
+        print(f"INCOMING REQUEST to /lca/calc: {json.dumps(payload_dict, indent=2, ensure_ascii=False)}", flush=True)
+    except Exception as e:
+        print(f"Error logging payload: {e}", flush=True)
+    
+    # Vérifier que la liste d'ingrédients n'est pas vide
+    if not request.ingredients:
+        print(f"ERROR: Empty ingredients list received!", flush=True)
+        print(f"{'='*80}\n", flush=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="La liste d'ingrédients ne peut pas être vide"
+        )
+    
+    try:
+        # Log pour débogage
+        print(f"LCA Service processing: {len(request.ingredients)} ingredients", flush=True)
+        if request.ingredients:
+            print(f"First ingredient: {json.dumps(request.ingredients[0].dict(), indent=2, ensure_ascii=False)}", flush=True)
+        
         result = lca_service.calculate_lca(request)
+        print(f"{'='*80}\n", flush=True)
         return result
         
+    except HTTPException:
+        print(f"{'='*80}\n", flush=True)
+        raise
     except Exception as e:
+        import traceback
+        print(f"LCA Service error: {str(e)}", flush=True)
+        print(f"Traceback: {traceback.format_exc()}", flush=True)
+        print(f"{'='*80}\n", flush=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Erreur lors du calcul ACV: {str(e)}"

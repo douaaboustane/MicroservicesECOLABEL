@@ -77,46 +77,152 @@ class Orchestrator:
             db.commit()
             
             # Préparer les ingrédients pour LCA
-            # Le NLP Service retourne entities_normalized (liste de NormalizedEntity)
-            # On filtre pour ne garder que les INGREDIENT (pas les ALLERGEN, QUANTITY, etc.)
+            # Le NLP Service retourne entities_normalized (liste de NormalizedEntity) et entities (liste brute)
             ingredients_for_lca = []
             
-            # Utiliser entities_normalized si disponible, sinon entities
-            entities_list = nlp_result.get("entities_normalized", []) or nlp_result.get("entities", [])
+            # Combiner entities_normalized et entities pour avoir toutes les entités
+            entities_normalized = nlp_result.get("entities_normalized", []) or []
+            entities_raw = nlp_result.get("entities", []) or []
             
-            print(f"🔍 NLP Result: {len(entities_list)} entités trouvées")
-            print(f"🔍 Structure NLP: {list(nlp_result.keys())}")
+            # Utiliser entities_normalized en priorité, puis entities si normalisées vides
+            all_entities = entities_normalized if entities_normalized else entities_raw
             
-            for entity in entities_list:
+            print(f"NLP Result: {len(entities_normalized)} entités normalisées, {len(entities_raw)} entités brutes", flush=True)
+            print(f"Structure NLP: {list(nlp_result.keys())}", flush=True)
+            print(f"Total entities to process: {len(all_entities)}", flush=True)
+            
+            # Afficher toutes les entités pour debug
+            all_labels = {}
+            for entity in all_entities:
+                if isinstance(entity, dict):
+                    label = entity.get("label", "UNKNOWN")
+                    all_labels[label] = all_labels.get(label, 0) + 1
+            print(f"Labels trouvés: {all_labels}", flush=True)
+            
+            # Essayer d'abord de trouver les INGREDIENT (avec différentes variantes de casse)
+            for entity in all_entities:
                 if not isinstance(entity, dict):
                     continue
                 
-                # Filtrer uniquement les INGREDIENT
                 label = entity.get("label", "").upper()
-                if label != "INGREDIENT":
+                
+                # Filtrer uniquement les INGREDIENT (accepter différentes variantes)
+                if label not in ["INGREDIENT", "INGREDIENTS"]:
                     continue
                 
-                # Extraire le nom de l'ingrédient
-                ing_name = entity.get("text", "") or entity.get("normalized_name", "")
+                # Extraire le nom de l'ingrédient (priorité: normalized_name, puis text)
+                ing_name = entity.get("normalized_name", "") or entity.get("text", "")
                 
                 # Ignorer les ingrédients sans nom
                 if not ing_name or not ing_name.strip():
                     continue
                 
+                # Ignorer les entités trop courtes (probablement des erreurs)
+                if len(ing_name.strip()) < 2:
+                    continue
+                
+                # Construire le dictionnaire en omettant les valeurs None
                 ing_dict = {
-                    "name": ing_name.strip(),  # Obligatoire, ne doit pas être vide
-                    "normalized_name": entity.get("normalized_name"),
-                    "agribalyse_code": entity.get("agribalyse_code"),
-                    "quantity_percentage": None  # TODO: extraire depuis quantity si disponible
+                    "name": ing_name.strip()  # Obligatoire, ne doit pas être vide
                 }
                 
+                # Ajouter les champs optionnels seulement s'ils ne sont pas None
+                if entity.get("normalized_name") and entity.get("normalized_name") != ing_name.strip():
+                    ing_dict["normalized_name"] = entity.get("normalized_name")
+                if entity.get("agribalyse_code"):
+                    ing_dict["agribalyse_code"] = entity.get("agribalyse_code")
+                
                 ingredients_for_lca.append(ing_dict)
-                print(f"✅ Ingrédient préparé pour LCA: {ing_dict}")
+                print(f"Ingredient prepared for LCA: {ing_dict}", flush=True)
+            
+            # Si aucun INGREDIENT trouvé, utiliser toutes les entités sauf ALLERGEN et QUANTITY
+            # (fallback pour les cas où le modèle n'a pas bien labellisé)
+            if not ingredients_for_lca:
+                print("WARNING: Aucun INGREDIENT trouvé, utilisation de toutes les entités (sauf ALLERGEN/QUANTITY)", flush=True)
+                print(f"WARNING: Total entities available: {len(all_entities)}", flush=True)
+                print(f"WARNING: All labels: {all_labels}", flush=True)
+                
+                for entity in all_entities:
+                    if not isinstance(entity, dict):
+                        continue
+                    
+                    label = entity.get("label", "").upper()
+                    
+                    # Exclure ALLERGEN et QUANTITY
+                    if label in ["ALLERGEN", "QUANTITY", "QUANTITIES"]:
+                        continue
+                    
+                    # Utiliser toutes les autres entités comme ingrédients potentiels
+                    ing_name = entity.get("normalized_name", "") or entity.get("text", "")
+                    
+                    if not ing_name or not ing_name.strip():
+                        continue
+                    
+                    # Ignorer les entités trop courtes (probablement des erreurs)
+                    if len(ing_name.strip()) < 2:
+                        continue
+                    
+                    # Ignorer les entités qui sont clairement des quantités (contiennent des chiffres uniquement)
+                    if ing_name.strip().replace(".", "").replace(",", "").isdigit():
+                        continue
+                    
+                    ing_dict = {
+                        "name": ing_name.strip()
+                    }
+                    
+                    if entity.get("normalized_name") and entity.get("normalized_name") != ing_name.strip():
+                        ing_dict["normalized_name"] = entity.get("normalized_name")
+                    if entity.get("agribalyse_code"):
+                        ing_dict["agribalyse_code"] = entity.get("agribalyse_code")
+                    
+                    ingredients_for_lca.append(ing_dict)
+                    print(f"Fallback ingredient prepared: {ing_dict} (label: {label})", flush=True)
+                
+                print(f"WARNING: After fallback, {len(ingredients_for_lca)} ingredients prepared", flush=True)
             
             # Vérifier qu'on a au moins un ingrédient
             if not ingredients_for_lca:
-                print(f"❌ Aucun ingrédient valide. Entités disponibles: {[e.get('label') for e in entities_list if isinstance(e, dict)]}")
-                raise ValueError("Aucun ingrédient valide extrait pour le calcul ACV")
+                labels = [e.get('label', 'UNKNOWN') for e in all_entities if isinstance(e, dict)]
+                print(f"ERROR: No valid ingredients. Available entities: {labels}", flush=True)
+                print(f"ERROR: NLP result keys: {list(nlp_result.keys())}", flush=True)
+                print(f"ERROR: Total entities: {len(all_entities)}", flush=True)
+                print(f"ERROR: entities_normalized: {len(entities_normalized)}, entities_raw: {len(entities_raw)}", flush=True)
+                
+                # Si on a du texte mais pas d'entités, essayer d'extraire des mots du texte original
+                if ingredients_text and len(ingredients_text.strip()) > 10:
+                    print(f"WARNING: Tentative d'extraction manuelle depuis le texte...", flush=True)
+                    # Nettoyer le texte (enlever caractères spéciaux, normaliser)
+                    import re
+                    # Remplacer les caractères spéciaux par des espaces
+                    cleaned_text = re.sub(r'[^\w\s]', ' ', ingredients_text)
+                    # Extraire les mots (séparés par virgules ou espaces)
+                    words = re.split(r'[,;:]\s*|\s+', cleaned_text)
+                    
+                    # Mots à ignorer
+                    stop_words = {
+                        'le', 'la', 'les', 'de', 'du', 'des', 'et', 'ou', 'pour', 'avec', 'sans',
+                        'en', 'poudre', 'complet', 'complete', 'completes', 'mineraux', 'mineraux',
+                        'sel', 'sucre', 'eau', 'eau', 'pate', 'pate', 'pates'
+                    }
+                    
+                    # Extraire les ingrédients potentiels
+                    for word in words:
+                        cleaned = word.strip('.,;:!?()[]{}').lower().strip()
+                        # Ignorer les mots trop courts, les chiffres, et les stop words
+                        if (len(cleaned) >= 3 and 
+                            not cleaned.isdigit() and 
+                            cleaned not in stop_words and
+                            not cleaned.replace('.', '').replace(',', '').isdigit()):
+                            # Nettoyer encore plus (enlever caractères étranges)
+                            cleaned = re.sub(r'[^\w\s-]', '', cleaned).strip()
+                            if len(cleaned) >= 3:
+                                ingredients_for_lca.append({"name": cleaned})
+                                print(f"Manual ingredient extracted: {cleaned}", flush=True)
+                                if len(ingredients_for_lca) >= 15:  # Augmenter la limite
+                                    break
+                
+                if not ingredients_for_lca:
+                    raise ValueError(f"Aucun ingrédient valide extrait pour le calcul ACV. Entités trouvées: {labels}")
             
             # ============================================
             # ÉTAPE 3: LCA SERVICE (Calcul impacts)
@@ -129,34 +235,76 @@ class Orchestrator:
             # Extraire packaging depuis NLP
             # Le LCA Service requiert que packaging.type soit une string non vide si packaging est fourni
             packaging = None
-            if nlp_result.get("packaging"):
-                packaging_info = nlp_result["packaging"]
-                if isinstance(packaging_info, dict):
-                    packaging_type = packaging_info.get("type")
-                    # Ne créer packaging que si type est valide
-                    if packaging_type and isinstance(packaging_type, str) and packaging_type.strip():
-                        # Convertir weight si disponible (peut être en g ou kg)
-                        weight_g = packaging_info.get("weight_g")
-                        if not weight_g and packaging_info.get("weight"):
-                            weight = packaging_info.get("weight")
-                            weight_unit = packaging_info.get("weight_unit", "g")
-                            if weight_unit == "kg":
-                                weight_g = weight * 1000 if weight else None
-                            else:
-                                weight_g = weight
-                        
-                        packaging = {
-                            "type": packaging_type.strip(),  # Obligatoire, ne doit pas être vide
-                            "weight_g": weight_g,
-                            "recyclable": packaging_info.get("recyclable", False)
-                        }
+            packaging_info = nlp_result.get("packaging")
+            # Vérifier que packaging_info existe, n'est pas None, et n'est pas un dict vide
+            if packaging_info and isinstance(packaging_info, dict) and len(packaging_info) > 0:
+                packaging_type = packaging_info.get("type")
+                # Ne créer packaging que si type est valide et non vide
+                if packaging_type and isinstance(packaging_type, str) and packaging_type.strip():
+                    # Convertir weight si disponible (peut être en g ou kg)
+                    weight_g = packaging_info.get("weight_g")
+                    if not weight_g and packaging_info.get("weight"):
+                        weight = packaging_info.get("weight")
+                        weight_unit = packaging_info.get("weight_unit", "g")
+                        if weight_unit == "kg":
+                            weight_g = weight * 1000 if weight else None
+                        else:
+                            weight_g = weight
+                    
+                    packaging = {
+                        "type": packaging_type.strip(),  # Obligatoire, ne doit pas être vide
+                        "weight_g": weight_g,
+                        "recyclable": packaging_info.get("recyclable", False)
+                    }
+                    print(f"INFO: Packaging créé: {packaging}", flush=True)
+                else:
+                    print(f"WARNING: Packaging info exists but type is invalid or empty: {packaging_type}", flush=True)
+                    print(f"WARNING: packaging_info = {packaging_info}", flush=True)
+            else:
+                print(f"INFO: No packaging info in NLP result (packaging_info={packaging_info})", flush=True)
             
-            print(f"📤 Envoi au LCA Service: {len(ingredients_for_lca)} ingrédients, packaging={packaging is not None}")
-            print(f"📤 Payload LCA: ingredients={ingredients_for_lca[:2]}...")  # Afficher les 2 premiers
+            import json
+            print(f"Sending to LCA Service: {len(ingredients_for_lca)} ingredients, packaging={packaging is not None}", flush=True)
+            print(f"LCA Payload preview: {json.dumps(ingredients_for_lca[:2] if len(ingredients_for_lca) >= 2 else ingredients_for_lca, indent=2, ensure_ascii=False)}", flush=True)
+            
+            # Vérification finale avant envoi (déjà faite plus haut, mais double vérification)
+            if not ingredients_for_lca:
+                labels = [e.get('label', 'UNKNOWN') for e in all_entities if isinstance(e, dict)]
+                error_msg = f"Aucun ingrédient valide extrait. Entités disponibles: {labels}. NLP keys: {list(nlp_result.keys())}"
+                print(f"ERROR: {error_msg}", flush=True)
+                raise ValueError(error_msg)
+            
+            # Vérifier que chaque ingrédient a un nom
+            for idx, ing in enumerate(ingredients_for_lca):
+                if not ing.get("name") or not ing["name"].strip():
+                    error_msg = f"Ingrédient {idx} n'a pas de nom valide: {ing}"
+                    print(f"ERROR: {error_msg}", flush=True)
+                    raise ValueError(error_msg)
+            
+            # Log final avant envoi
+            import json
+            print(f"FINAL PAYLOAD TO LCA: {json.dumps({'ingredients': ingredients_for_lca, 'product_weight_kg': 1.0, 'packaging': packaging if packaging else None}, indent=2, ensure_ascii=False)}", flush=True)
+            print(f"Number of ingredients: {len(ingredients_for_lca)}", flush=True)
+            print(f"Packaging: {packaging if packaging else 'None'}", flush=True)
+            
+            if not ingredients_for_lca:
+                print(f"ERROR: No ingredients prepared for LCA!", flush=True)
+                print(f"NLP entities: {len(all_entities)}", flush=True)
+                print(f"Labels found: {all_labels}", flush=True)
+                raise ValueError("Aucun ingrédient valide pour le calcul ACV")
+            
+            # S'assurer que packaging est None si vide ou sans type
+            final_packaging = None
+            if packaging and isinstance(packaging, dict) and len(packaging) > 0:
+                packaging_type = packaging.get("type")
+                if packaging_type and isinstance(packaging_type, str) and packaging_type.strip():
+                    final_packaging = packaging
+                else:
+                    print(f"WARNING: Packaging has no valid type, sending None", flush=True)
             
             lca_result = await self.client.call_lca_service(
                 ingredients=ingredients_for_lca,
-                packaging=packaging,  # None si pas de packaging valide
+                packaging=final_packaging,
                 product_weight_kg=1.0  # Par défaut
             )
             job.lca_result = lca_result
@@ -214,13 +362,30 @@ class Orchestrator:
             return final_result
         
         except Exception as e:
-            # En cas d'erreur
+            # En cas d'erreur, sauvegarder les résultats partiels avant de lever l'exception
             error_msg = str(e)
+            print(f"ERROR in orchestrator: {error_msg}", flush=True)
+            import traceback
+            print(f"Traceback: {traceback.format_exc()}", flush=True)
+            
+            # S'assurer que tous les résultats partiels sont sauvegardés
+            try:
+                db.refresh(job)
+                # Les résultats partiels (parser_result, nlp_result, lca_result) 
+                # sont déjà sauvegardés dans les étapes précédentes
+                # On s'assure juste qu'ils sont bien commités
+                db.commit()
+            except Exception as commit_error:
+                print(f"ERROR committing partial results: {commit_error}", flush=True)
+            
+            # Mettre à jour le statut d'erreur
             self.job_manager.update_status(
                 db, job.id, JobStatus.ERROR, progress=0,
                 current_step=f"Erreur: {error_msg}"
             )
             job.error_message = error_msg
             db.commit()
-            raise
+            
+            # Ne pas lever l'exception pour que les résultats partiels soient accessibles
+            # Le statut ERROR indique déjà qu'il y a eu un problème
 

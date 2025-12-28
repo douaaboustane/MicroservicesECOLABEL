@@ -1,33 +1,31 @@
 """
 Routes pour le frontend mobile
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.orm import Session
 from typing import Optional
 from app.database import get_db
 from app.models import Job, JobStatus, User
-from app.services.orchestrator import Orchestrator
 from app.services.job_manager import JobManager
+from app.services.rabbitmq_service import rabbitmq_service
 from app.utils.dependencies import get_optional_user
 from app import schemas
 
 router = APIRouter(prefix="/mobile", tags=["Mobile"])
 
-orchestrator = Orchestrator()
 job_manager = JobManager()
 
 
 @router.post("/products/scan", response_model=schemas.ScanJobResponse)
 async def create_scan_job(
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_optional_user)
 ):
     """
     Crée un nouveau job de scan de produit
     
-    Le traitement se fait de manière asynchrone :
+    Le traitement se fait de manière asynchrone via RabbitMQ :
     1. OCR (Parser Service)
     2. Extraction ingrédients (NLP Service)
     3. Calcul impacts (LCA Service)
@@ -44,10 +42,12 @@ async def create_scan_job(
         user_id = user.id if user else None
         job = job_manager.create_job(db, user_id=user_id)
         
-        # Lancer le traitement de manière asynchrone
-        background_tasks.add_task(
-            orchestrator.process_product_scan,
-            job, image_data, file.filename, db
+        # Publier le job dans RabbitMQ pour traitement asynchrone
+        rabbitmq_service.publish_scan_job(
+            job_id=job.id,
+            image_data=image_data,
+            filename=file.filename,
+            user_id=user_id
         )
         
         return schemas.ScanJobResponse(
@@ -80,6 +80,9 @@ async def get_job_status(
             detail=f"Job {job_id} non trouvé"
         )
     
+    # Rafraîchir le job pour avoir les dernières données
+    db.refresh(job)
+    
     response_data = {
         "job_id": job.id,
         "status": job.status.value,
@@ -88,6 +91,16 @@ async def get_job_status(
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat() if job.updated_at else None
     }
+    
+    # Inclure les résultats intermédiaires pour le débogage (toujours, même en cas d'erreur)
+    if job.parser_result is not None:
+        response_data["parser_result"] = job.parser_result
+    if job.nlp_result is not None:
+        response_data["nlp_result"] = job.nlp_result
+    if job.lca_result is not None:
+        response_data["lca_result"] = job.lca_result
+    if job.scoring_result is not None:
+        response_data["scoring_result"] = job.scoring_result
     
     # Si terminé, inclure le résultat
     if job.status == JobStatus.DONE and job.result:
@@ -98,4 +111,38 @@ async def get_job_status(
         response_data["error"] = job.error_message
     
     return response_data
+
+
+@router.get("/products/scan/{job_id}/debug", tags=["Mobile"])
+async def get_job_debug(
+    job_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint de debug pour voir tous les détails d'un job
+    """
+    job = job_manager.get_job(db, job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Job {job_id} non trouvé"
+        )
+    
+    import json
+    debug_data = {
+        "job_id": job.id,
+        "status": job.status.value,
+        "progress": job.progress,
+        "current_step": job.current_step,
+        "error_message": job.error_message,
+        "parser_result": job.parser_result,
+        "nlp_result": job.nlp_result,
+        "lca_result": job.lca_result,
+        "scoring_result": job.scoring_result,
+        "result": job.result,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None
+    }
+    
+    return debug_data
 

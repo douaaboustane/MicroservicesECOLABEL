@@ -109,6 +109,30 @@ services:
     restart: unless-stopped
 
   # ============================================
+  # RABBITMQ (Message Queue)
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ecolabel
+      RABBITMQ_DEFAULT_PASS: ecolabel123
+      RABBITMQ_DEFAULT_VHOST: /
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # ============================================
   # MICROSERVICES
   # ============================================
 
@@ -215,8 +239,52 @@ services:
       JWT_EXPIRATION_HOURS: 24
       HOST: 0.0.0.0
       PORT: 8000
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ecolabel
+      RABBITMQ_PASSWORD: ecolabel123
+      RABBITMQ_VHOST: /
     depends_on:
       api-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      parser-service:
+        condition: service_started
+      nlp-service:
+        condition: service_started
+      lca-service:
+        condition: service_started
+      scoring-service:
+        condition: service_started
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # Worker pour traiter les jobs via RabbitMQ
+  api-gateway-worker:
+    build:
+      context: ./backend/api-gateway-service
+      dockerfile: Dockerfile
+    container_name: api-gateway-worker
+    command: python -m app.workers.job_worker
+    environment:
+      DATABASE_URL: postgresql://ecolabel:ecolabel123@api-db:5432/ecolabel_api
+      PARSER_SERVICE_URL: http://parser-service:8001
+      NLP_SERVICE_URL: http://nlp-service:8003
+      LCA_SERVICE_URL: http://lca-service:8004
+      SCORING_SERVICE_URL: http://scoring-service:8005
+      # RabbitMQ
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ecolabel
+      RABBITMQ_PASSWORD: ecolabel123
+      RABBITMQ_VHOST: /
+    depends_on:
+      api-db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       parser-service:
         condition: service_started
@@ -240,6 +308,7 @@ volumes:
   scoring_postgres_data:
   api_postgres_data:
   parser_uploads:
+  rabbitmq_data:
 
 # ============================================
 # RÉSEAU

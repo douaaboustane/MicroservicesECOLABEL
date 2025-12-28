@@ -91,17 +91,31 @@ class MicroserviceClient:
         """Appelle le LCA Service pour calcul d'impacts"""
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                # Préparer le payload (packaging peut être None, pas un dict vide)
+                # Nettoyer les ingrédients pour enlever les None explicites
+                cleaned_ingredients = []
+                for ing in ingredients:
+                    cleaned_ing = {k: v for k, v in ing.items() if v is not None}
+                    cleaned_ingredients.append(cleaned_ing)
+                
                 payload = {
-                    "ingredients": ingredients,
+                    "ingredients": cleaned_ingredients,
                     "product_weight_kg": product_weight_kg
                 }
-                if packaging:
-                    payload["packaging"] = packaging
-                if transport:
-                    payload["transport"] = transport
+                # Ne pas envoyer packaging si c'est None ou un dict vide
+                if packaging and isinstance(packaging, dict) and packaging.get("type"):
+                    # Nettoyer aussi le packaging
+                    cleaned_packaging = {k: v for k, v in packaging.items() if v is not None}
+                    # S'assurer que type est présent et non vide
+                    if cleaned_packaging.get("type"):
+                        payload["packaging"] = cleaned_packaging
+                if transport and isinstance(transport, dict) and any(transport.values()):
+                    cleaned_transport = {k: v for k, v in transport.items() if v is not None}
+                    if cleaned_transport:
+                        payload["transport"] = cleaned_transport
                 
-                print(f"📤 LCA Request payload: {payload}")
+                import json
+                payload_str = json.dumps(payload, indent=2, ensure_ascii=False)
+                print(f"LCA Request payload: {payload_str}", flush=True)
                 
                 response = await client.post(
                     f"{self.lca_url}/lca/calc",
@@ -111,17 +125,33 @@ class MicroserviceClient:
                 # Si erreur, logger les détails avant de lever l'exception
                 if response.status_code != 200:
                     error_detail = response.text
-                    print(f"ERROR LCA Service ({response.status_code}): {error_detail}")
+                    print(f"\n{'='*80}", flush=True)
+                    print(f"ERROR LCA Service ({response.status_code})", flush=True)
+                    print(f"{'='*80}", flush=True)
+                    print(f"Payload envoyé:", flush=True)
+                    print(f"{payload_str}", flush=True)
+                    print(f"\nRéponse d'erreur: {error_detail}", flush=True)
                     try:
                         error_json = response.json()
                         error_detail = error_json.get('detail', error_detail)
                         if isinstance(error_detail, list):
-                            # Erreurs de validation Pydantic
-                            error_detail = "; ".join([str(e) for e in error_detail])
-                        print(f"ERROR LCA Service detail: {error_detail}")
-                    except Exception as e:
-                        print(f"ERROR parsing LCA error response: {e}")
-                        print(f"ERROR raw response: {response.text[:500]}")
+                            # Erreurs de validation Pydantic - format détaillé
+                            print(f"\nErreurs de validation Pydantic:", flush=True)
+                            error_messages = []
+                            for e in error_detail:
+                                if isinstance(e, dict):
+                                    loc = e.get('loc', [])
+                                    msg = e.get('msg', '')
+                                    error_type = e.get('type', '')
+                                    error_msg = f"{' -> '.join(str(l) for l in loc)}: {msg} (type: {error_type})"
+                                    error_messages.append(error_msg)
+                                    print(f"  - {error_msg}", flush=True)
+                                else:
+                                    error_messages.append(str(e))
+                            error_detail = "; ".join(error_messages)
+                        print(f"{'='*80}\n", flush=True)
+                    except Exception as parse_error:
+                        print(f"Impossible de parser l'erreur JSON: {parse_error}", flush=True)
                 
                 response.raise_for_status()
                 return response.json()

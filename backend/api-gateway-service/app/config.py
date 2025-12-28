@@ -30,6 +30,20 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
+    # RabbitMQ
+    RABBITMQ_HOST: str = "rabbitmq"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_USER: str = "ecolabel"
+    RABBITMQ_PASSWORD: str = "ecolabel123"
+    RABBITMQ_VHOST: str = "/"
+    
+    # Queues
+    QUEUE_PRODUCT_SCAN: str = "product_scan"
+    QUEUE_OCR: str = "ocr"
+    QUEUE_NLP: str = "nlp"
+    QUEUE_LCA: str = "lca"
+    QUEUE_SCORING: str = "scoring"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

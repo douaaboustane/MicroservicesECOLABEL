@@ -181,6 +181,19 @@ async def parse_single_product(
         
         # Extraire informations structurées
         text = parsed_data.get("text", "")
+        confidence = parsed_data.get("confidence", 0.0)
+        
+        # Vérifier que du texte a été extrait
+        if not text or not text.strip():
+            error_msg = (
+                f"Aucun texte extrait de l'image '{file.filename}'. "
+                f"Confiance OCR: {confidence:.2%}. "
+                "Causes possibles: image sans texte visible, qualité d'image insuffisante, "
+                "ou erreur OCR. Veuillez utiliser une image avec du texte clairement visible."
+            )
+            print(f"ERROR: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
         product_name = parsed_data.get("product_name") or text_cleaner.extract_product_name(text)
         
         # Utiliser le modèle NER pour extraction avancée d'ingrédients
@@ -197,6 +210,12 @@ async def parse_single_product(
         
         # Nettoyer le texte
         cleaned_text = text_cleaner.clean(text)
+        
+        # Log pour débogage
+        print(f"Parser: Texte brut extrait: {len(text)} caracteres")
+        print(f"Parser: Texte nettoye: {len(cleaned_text)} caracteres")
+        print(f"Parser: Ingredients extraits: {ingredients[:100] if ingredients else 'AUCUN'}")
+        print(f"Parser: Confiance OCR: {confidence:.2%}")
         
         # Sauvegarder en DB
         product = ProductMetadata(
