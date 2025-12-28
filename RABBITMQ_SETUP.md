@@ -182,3 +182,4 @@ Augmentez le nombre de workers ou optimisez le traitement.
 - [ ] Implémenter le retry avec backoff exponentiel
 - [ ] Ajouter des métriques et monitoring avancé
 
+

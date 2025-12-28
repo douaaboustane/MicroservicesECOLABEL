@@ -1,4 +1,0 @@
-"""
-Services du Scoring Service
-"""
-

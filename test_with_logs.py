@@ -306,3 +306,4 @@ if __name__ == "__main__":
     image_path = sys.argv[1]
     test_workflow_with_logs(image_path)
 
+

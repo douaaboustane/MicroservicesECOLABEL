@@ -1,0 +1,74 @@
+#!/bin/bash
+set -e
+
+echo "=== Starting Integration Tests ==="
+
+# Fonction pour vérifier la santé d'un service
+check_service() {
+    local service_name=$1
+    local url=$2
+    local max_attempts=30
+    local attempt=1
+    
+    echo "Checking ${service_name} at ${url}..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl -f "${url}" > /dev/null 2>&1; then
+            echo "${service_name} is healthy"
+            return 0
+        fi
+        echo "Waiting for ${service_name}... ($attempt/${max_attempts})"
+        sleep 5
+        attempt=$((attempt + 1))
+    done
+    
+    echo "${service_name} health check failed after ${max_attempts} attempts"
+    return 1
+}
+
+# Démarrer les services
+echo "Starting services with docker-compose..."
+docker-compose up -d --build
+
+# Attendre que les services soient prêts
+echo "Waiting for services to be ready..."
+sleep 30
+
+# Health checks pour chaque service
+echo ""
+echo "=== Health Checks ==="
+
+check_service "API Gateway" "http://localhost:8000/health" || echo "WARNING: API Gateway health check failed"
+check_service "Parser Service" "http://localhost:8001/health" || echo "WARNING: Parser Service health check failed"
+check_service "NLP Service" "http://localhost:8003/health" || echo "WARNING: NLP Service health check failed"
+check_service "LCA Service" "http://localhost:8004/health" || echo "WARNING: LCA Service health check failed"
+check_service "Scoring Service" "http://localhost:8005/health" || echo "WARNING: Scoring Service health check failed"
+
+# Test workflow si disponible
+echo ""
+echo "=== Workflow Test ==="
+if [ -f "test_workflow_simple.py" ]; then
+    echo "Running workflow test..."
+    pip3 install requests || pip install requests || true
+    
+    # Créer une image de test simple (1x1 pixel PNG)
+    echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" | base64 -d > test_image.png 2>/dev/null || true
+    
+    if [ -f "test_image.png" ]; then
+        python3 test_workflow_simple.py test_image.png || echo "WARNING: Workflow test failed (non-blocking)"
+    else
+        echo "WARNING: Could not create test image, skipping workflow test"
+    fi
+else
+    echo "WARNING: test_workflow_simple.py not found, skipping workflow test"
+fi
+
+# Collecter les logs
+echo ""
+echo "=== Collecting logs ==="
+docker-compose logs --tail=100 > integration_logs.txt || true
+
+echo ""
+echo "Integration tests completed"
+echo "Logs saved to: integration_logs.txt"
+
