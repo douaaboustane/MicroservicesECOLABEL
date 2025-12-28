@@ -1,0 +1,130 @@
+# Configuration du pipeline complet
+
+pipeline:
+  name: "EcoLabel Data Mining Pipeline"
+  version: "1.0.0"
+  
+# ÉTAPE 1 : SCRAPING
+scraping:
+  openfoodfacts:
+    enabled: true
+    max_products: 5000
+    country: "France"
+    rate_limit: 1  # req/sec
+    
+  carrefour:
+    enabled: false
+    max_products: 10000
+    base_url: "https://www.carrefour.fr"
+    headers:
+      User-Agent: "Mozilla/5.0 (Educational Research)"
+    rate_limit: 0.5
+    
+  auchan:
+    enabled: false
+    max_products: 10000
+    base_url: "https://www.auchan.fr"
+    rate_limit: 0.5
+    
+  agribalyse:
+    enabled: true
+    download_url: "https://agribalyse.ademe.fr/data/export"
+    
+# ÉTAPE 2 : CLEANING
+cleaning:
+  deduplication:
+    method: "fuzzy"  # exact, fuzzy, ml
+    threshold: 0.85
+    
+  normalization:
+    lowercase: true
+    remove_accents: false
+    unicode_normalize: true
+    
+  missing_values:
+    strategy: "drop"  # drop, impute, flag
+    threshold: 0.3  # Drop si >30% manquant
+    
+  validation:
+    schema_file: "config/product_schema.json"
+    strict: false
+
+# ÉTAPE 3 : EXPLORATION
+exploration:
+  statistics:
+    descriptive: true
+    inferential: false
+    
+  visualizations:
+    output_dir: "outputs/visualizations"
+    formats: ["png", "svg"]
+    dpi: 300
+    
+  correlations:
+    method: "pearson"  # pearson, spearman, kendall
+    threshold: 0.5
+
+# ÉTAPE 4 : PREPROCESSING
+preprocessing:
+  tokenization:
+    language: "fr"
+    custom_tokenizer: true
+    
+  annotation:
+    auto_annotate: true
+    confidence_threshold: 0.80
+    manual_review_threshold: 0.60
+    
+  augmentation:
+    enabled: true
+    factor: 5  # 1 sample → 5 samples
+    techniques:
+      - synonym_substitution
+      - ocr_simulation
+      - structural_variation
+      
+  split:
+    train: 0.7
+    validation: 0.15
+    test: 0.15
+    random_seed: 42
+
+# ÉTAPE 5 : TRAINING
+training:
+  model_type: "spacy_ner"
+  
+  spacy:
+    base_model: "fr_core_news_md"
+    n_iter: 50
+    batch_size: 32
+    dropout: 0.2
+    learning_rate: 0.001
+    
+  evaluation:
+    metrics: ["precision", "recall", "f1"]
+    target_f1: 0.85
+    
+  versioning:
+    enabled: true
+    mlflow_tracking: false
+    
+# OUTPUT
+output:
+  datasets:
+    format: "csv"  # csv, json, parquet
+    compression: "gzip"
+    
+  models:
+    format: "spacy"
+    versioning: true
+    
+  reports:
+    format: "html"
+    include_plots: true
+
+# LOGGING
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "outputs/logs/pipeline.log"
+  console: true
+

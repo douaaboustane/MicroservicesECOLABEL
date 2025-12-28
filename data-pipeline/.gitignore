@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+.venv
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data
+datasets/raw/*.csv
+datasets/raw/*.csv.gz
+datasets/cleaned/*.csv
+datasets/cleaned/*.csv.gz
+datasets/processed/*.jsonl
+datasets/processed/*.csv
+
+# Models
+datasets/models/spacy/*/
+
+# Outputs
+outputs/logs/*.log
+outputs/visualizations/*.png
+outputs/visualizations/*.svg
+outputs/reports/*.html
+outputs/reports/*.pdf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+

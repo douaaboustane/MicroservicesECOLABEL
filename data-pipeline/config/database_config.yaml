@@ -1,0 +1,22 @@
+# Configuration PostgreSQL
+
+database:
+  host: "localhost"
+  port: 5433
+  name: "ecolabel"
+  user: "ecolabel"
+  password: "ecolabel123"
+  
+  # Connection pool
+  pool_size: 10
+  max_overflow: 20
+  pool_timeout: 30
+  pool_recycle: 3600
+  
+  # Tables
+  tables:
+    products: "products"
+    ingredients: "ingredients"
+    impacts: "impacts"
+    models: "ml_models"
+

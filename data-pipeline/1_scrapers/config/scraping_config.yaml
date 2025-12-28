@@ -1,0 +1,35 @@
+# Configuration spécifique au scraping
+
+user_agents_file: "1_scrapers/config/user_agents.txt"
+
+openfoodfacts:
+  base_url: "https://world.openfoodfacts.org"
+  api_url: "https://world.openfoodfacts.org/api/v2"
+  country: "France"
+  fields:
+    - code
+    - product_name
+    - ingredients_text
+    - categories
+    - labels
+    - packaging
+    - origins
+    - nutriscore_grade
+    - ecoscore_grade
+    - allergens
+  
+agribalyse:
+  base_url: "https://agribalyse.ademe.fr"
+  export_url: "https://doc.agribalyse.fr/documentation/acces-donnees"
+  version: "3.1"
+
+carrefour:
+  enabled: false
+  base_url: "https://www.carrefour.fr"
+  max_pages: 100
+
+auchan:
+  enabled: false
+  base_url: "https://www.auchan.fr"
+  max_pages: 100
+

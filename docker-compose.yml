@@ -1,0 +1,249 @@
+services:
+  # ============================================
+  # BASES DE DONNÉES POSTGRESQL
+  # ============================================
+  
+  # DB pour Parser Service
+  parser-db:
+    image: postgres:15-alpine
+    container_name: parser-postgres
+    environment:
+      POSTGRES_USER: ecolabel
+      POSTGRES_PASSWORD: ecolabel123
+      POSTGRES_DB: ecolabel
+    ports:
+      - "5433:5432"
+    volumes:
+      - parser_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecolabel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # DB pour NLP Service
+  nlp-db:
+    image: postgres:15-alpine
+    container_name: nlp-postgres
+    environment:
+      POSTGRES_USER: ecolabel
+      POSTGRES_PASSWORD: ecolabel123
+      POSTGRES_DB: nlp_ingredients
+    ports:
+      - "5434:5432"
+    volumes:
+      - nlp_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecolabel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # DB pour LCA Service
+  lca-db:
+    image: postgres:15-alpine
+    container_name: lca-postgres
+    environment:
+      POSTGRES_USER: ecolabel
+      POSTGRES_PASSWORD: ecolabel123
+      POSTGRES_DB: lca_lite
+    ports:
+      - "5435:5432"
+    volumes:
+      - lca_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecolabel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # DB pour Scoring Service
+  scoring-db:
+    image: postgres:15-alpine
+    container_name: scoring-postgres
+    environment:
+      POSTGRES_USER: ecolabel
+      POSTGRES_PASSWORD: ecolabel123
+      POSTGRES_DB: scoring
+    ports:
+      - "5437:5432"
+    volumes:
+      - scoring_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecolabel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # DB centrale pour API Gateway (users, jobs, scores)
+  api-db:
+    image: postgres:15-alpine
+    container_name: api-postgres
+    environment:
+      POSTGRES_USER: ecolabel
+      POSTGRES_PASSWORD: ecolabel123
+      POSTGRES_DB: ecolabel_api
+    ports:
+      - "5436:5432"
+    volumes:
+      - api_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecolabel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # ============================================
+  # MICROSERVICES
+  # ============================================
+
+  # Parser Service
+  parser-service:
+    build:
+      context: ./backend/parser-service
+      dockerfile: Dockerfile
+    container_name: parser-service
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://ecolabel:ecolabel123@parser-db:5432/ecolabel
+      TESSERACT_CMD: /usr/bin/tesseract
+      TESSERACT_LANG: fra+eng
+      UPLOAD_DIR: /tmp/uploads
+      MAX_FILE_SIZE: 10485760
+    volumes:
+      - parser_uploads:/tmp/uploads
+    depends_on:
+      parser-db:
+        condition: service_healthy
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # NLP-Ingredients Service
+  nlp-service:
+    build:
+      context: ./backend/nlp-ingredients-service
+      dockerfile: Dockerfile
+    container_name: nlp-ingredients-service
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql://ecolabel:ecolabel123@nlp-db:5432/nlp_ingredients
+      NER_MODEL_PATH: app/models/ner_ingredients_v3
+      HOST: 0.0.0.0
+      PORT: 8003
+    depends_on:
+      nlp-db:
+        condition: service_healthy
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # LCA-Lite Service
+  lca-service:
+    build:
+      context: ./backend/lca-lite-service
+      dockerfile: Dockerfile
+    container_name: lca-lite-service
+    ports:
+      - "8004:8004"
+    environment:
+      DATABASE_URL: postgresql://ecolabel:ecolabel123@lca-db:5432/lca_lite
+      AGRIBALYSE_FILE: app/data/agribalyse_processed.csv
+      HOST: 0.0.0.0
+      PORT: 8004
+    depends_on:
+      lca-db:
+        condition: service_healthy
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # Scoring Service
+  scoring-service:
+    build:
+      context: ./backend/scoring-service
+      dockerfile: Dockerfile
+    container_name: scoring-service
+    ports:
+      - "8005:8005"
+    environment:
+      DATABASE_URL: postgresql://ecolabel:ecolabel123@scoring-db:5432/scoring
+      CLASSIFICATION_MODEL_PATH: app/models/classification_model.pkl
+      REGRESSION_MODEL_PATH: app/models/regression_model.pkl
+      HOST: 0.0.0.0
+      PORT: 8005
+    depends_on:
+      scoring-db:
+        condition: service_healthy
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./backend/api-gateway-service
+      dockerfile: Dockerfile
+    container_name: api-gateway-service
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://ecolabel:ecolabel123@api-db:5432/ecolabel_api
+      PARSER_SERVICE_URL: http://parser-service:8001
+      NLP_SERVICE_URL: http://nlp-service:8003
+      LCA_SERVICE_URL: http://lca-service:8004
+      SCORING_SERVICE_URL: http://scoring-service:8005
+      JWT_SECRET: your-secret-key-change-in-production-please-use-strong-secret
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRATION_HOURS: 24
+      HOST: 0.0.0.0
+      PORT: 8000
+    depends_on:
+      api-db:
+        condition: service_healthy
+      parser-service:
+        condition: service_started
+      nlp-service:
+        condition: service_started
+      lca-service:
+        condition: service_started
+      scoring-service:
+        condition: service_started
+    networks:
+      - ecolabel-network
+    restart: unless-stopped
+
+# ============================================
+# VOLUMES
+# ============================================
+volumes:
+  parser_postgres_data:
+  nlp_postgres_data:
+  lca_postgres_data:
+  scoring_postgres_data:
+  api_postgres_data:
+  parser_uploads:
+
+# ============================================
+# RÉSEAU
+# ============================================
+networks:
+  ecolabel-network:
+    driver: bridge

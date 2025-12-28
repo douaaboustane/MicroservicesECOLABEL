@@ -1,0 +1,127 @@
+{
+  "total_products": 5000,
+  "total_columns": 11,
+  "memory_usage_mb": 5.301950454711914,
+  "columns_info": {
+    "code": {
+      "type": "int64",
+      "missing": 0,
+      "missing_pct": 0.0,
+      "unique": 5000,
+      "unique_pct": 100.0
+    },
+    "product_name": {
+      "type": "object",
+      "missing": 0,
+      "missing_pct": 0.0,
+      "unique": 4418,
+      "unique_pct": 88.36
+    },
+    "ingredients_text": {
+      "type": "object",
+      "missing": 0,
+      "missing_pct": 0.0,
+      "unique": 4748,
+      "unique_pct": 94.96
+    },
+    "categories": {
+      "type": "object",
+      "missing": 18,
+      "missing_pct": 0.36,
+      "unique": 4007,
+      "unique_pct": 80.14
+    },
+    "labels": {
+      "type": "object",
+      "missing": 1013,
+      "missing_pct": 20.26,
+      "unique": 3207,
+      "unique_pct": 64.14
+    },
+    "packaging": {
+      "type": "object",
+      "missing": 1424,
+      "missing_pct": 28.48,
+      "unique": 2540,
+      "unique_pct": 50.8
+    },
+    "origins": {
+      "type": "object",
+      "missing": 3239,
+      "missing_pct": 64.78,
+      "unique": 704,
+      "unique_pct": 14.08
+    },
+    "nutriscore_grade": {
+      "type": "object",
+      "missing": 0,
+      "missing_pct": 0.0,
+      "unique": 7,
+      "unique_pct": 0.13999999999999999
+    },
+    "ecoscore_grade": {
+      "type": "object",
+      "missing": 0,
+      "missing_pct": 0.0,
+      "unique": 9,
+      "unique_pct": 0.18
+    },
+    "allergens": {
+      "type": "object",
+      "missing": 2211,
+      "missing_pct": 44.22,
+      "unique": 269,
+      "unique_pct": 5.38
+    },
+    "source": {
+      "type": "object",
+      "missing": 0,
+      "missing_pct": 0.0,
+      "unique": 1,
+      "unique_pct": 0.02
+    }
+  },
+  "nutriscore_distribution": {
+    "c": 1120,
+    "e": 1007,
+    "d": 934,
+    "a": 859,
+    "b": 658,
+    "unknown": 299,
+    "not-applicable": 123
+  },
+  "ecoscore_distribution": {
+    "b": 942,
+    "a": 804,
+    "d": 736,
+    "unknown": 695,
+    "c": 685,
+    "e": 524,
+    "a-plus": 273,
+    "not-applicable": 234,
+    "f": 107
+  },
+  "ingredients_stats": {
+    "mean_length": 205.8084,
+    "median_length": 160.0,
+    "max_length": 3050,
+    "min_length": 3
+  },
+  "categories_stats": {
+    "products_with_categories": 5000,
+    "avg_categories_per_product": 7.3146,
+    "max_categories": 25
+  },
+  "top_products": {
+    "nutella": 15,
+    "tomato ketchup": 15,
+    "crunchy peanut butter": 11,
+    "eau minérale naturelle": 11,
+    "mayonnaise": 11,
+    "smooth peanut butter": 10,
+    "coconut milk": 9,
+    "real mayonnaise": 9,
+    "baked beans": 8,
+    "extra virgin olive oil": 8
+  }
+}

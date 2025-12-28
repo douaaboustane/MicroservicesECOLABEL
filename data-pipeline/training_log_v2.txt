@@ -1,0 +1,14 @@
+[32m2025-12-27 21:08:32[0m | [1mINFO    [0m | [36m__main__[0m:[36mtrain_ner_model_v2[0m - [1m================================================================================[0m
+[32m2025-12-27 21:08:32[0m | [1mINFO    [0m | [36m__main__[0m:[36mtrain_ner_model_v2[0m - [1m🤖 ENTRAÎNEMENT MODÈLE NER v2.0 - PRÉCISION MAXIMALE[0m
+[32m2025-12-27 21:08:32[0m | [1mINFO    [0m | [36m__main__[0m:[36mtrain_ner_model_v2[0m - [1m================================================================================[0m
+[32m2025-12-27 21:08:32[0m | [1mINFO    [0m | [36m__main__[0m:[36mtrain_ner_model_v2[0m - [1m
+📂 Chargement du modèle de base: fr_core_news_md[0m
+Traceback (most recent call last):
+  File "/Users/zineb/Desktop/Eco-projet/data-pipeline/5_training/train_spacy_ner_v2.py", line 212, in <module>
+    main()
+  File "/Users/zineb/Desktop/Eco-projet/data-pipeline/5_training/train_spacy_ner_v2.py", line 201, in main
+    train_ner_model_v2(
+  File "/Users/zineb/Desktop/Eco-projet/data-pipeline/5_training/train_spacy_ner_v2.py", line 79, in train_ner_model_v2
+    nlp = spacy.load(base_model)
+          ^^^^^
+UnboundLocalError: cannot access local variable 'spacy' where it is not associated with a value
