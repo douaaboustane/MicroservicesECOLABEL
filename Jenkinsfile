@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         // Configuration Docker
-        DOCKER_REGISTRY = credentials('docker-registry-url') ?: 'localhost:5000'
+        DOCKER_REGISTRY = 'localhost:5000'
         DOCKER_IMAGE_PREFIX = 'ecolabel'
         
         // Configuration Python
@@ -22,7 +22,6 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '10'))
         timeout(time: 30, unit: 'MINUTES')
         timestamps()
-        ansiColor('xterm')
     }
     
     stages {
