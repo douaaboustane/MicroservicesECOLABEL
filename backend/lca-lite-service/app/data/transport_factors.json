@@ -1,0 +1,27 @@
+{
+  "routier_france": {
+    "co2_kg_per_tonne_km": 0.0005,
+    "description": "Transport routier en France"
+  },
+  "routier_europe": {
+    "co2_kg_per_tonne_km": 0.0006,
+    "description": "Transport routier en Europe"
+  },
+  "routier_local": {
+    "co2_kg_per_tonne_km": 0.0003,
+    "description": "Transport routier local (< 100 km)"
+  },
+  "maritime": {
+    "co2_kg_per_tonne_km": 0.000015,
+    "description": "Transport maritime"
+  },
+  "aerien": {
+    "co2_kg_per_tonne_km": 0.0015,
+    "description": "Transport aérien"
+  },
+  "ferroviaire": {
+    "co2_kg_per_tonne_km": 0.00002,
+    "description": "Transport ferroviaire"
+  }
+}
+
