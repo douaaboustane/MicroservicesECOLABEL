@@ -115,6 +115,11 @@ pipeline {
                             bash jenkins/scripts/integration-test.sh
                         else
                             # Fallback: démarrage manuel (sans rebuild)
+                            # Nettoyer d'abord les conteneurs existants
+                            docker-compose down -v || true
+                            docker rm -f parser-postgres nlp-postgres lca-postgres scoring-postgres api-postgres rabbitmq \
+                                parser-service nlp-ingredients-service lca-lite-service scoring-service \
+                                api-gateway-service api-gateway-worker 2>/dev/null || true
                             docker-compose up -d
                             sleep 10
                             
@@ -143,8 +148,8 @@ pipeline {
                         sh '''
                             echo "=== Collecting logs ==="
                             docker-compose logs --tail=100 > integration_logs.txt || true
-                            archiveArtifacts artifacts: 'integration_logs.txt', allowEmptyArchive: true
                         '''
+                        archiveArtifacts artifacts: 'integration_logs.txt', allowEmptyArchive: true
                     }
                 }
                 cleanup {
