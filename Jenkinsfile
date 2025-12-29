@@ -276,15 +276,21 @@ def runUnitTestsInDocker(serviceName) {
             -v "\${SERVICE_DIR}/tests:/app/tests:ro" \\
             ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest \\
             sh -c "
-                # Installer pytest (les dépendances sont déjà installées dans l'image)
-                pip install --no-cache-dir --no-deps pytest pytest-cov pytest-asyncio httpx 2>/dev/null || \\
-                pip install --no-cache-dir pytest pytest-cov pytest-asyncio httpx
-                if [ -d 'tests' ] && [ '\$(ls -A tests 2>/dev/null)' ]; then
+                # Installer pytest avec toutes ses dépendances
+                pip install --no-cache-dir pytest pytest-cov pytest-asyncio httpx || {
+                    echo 'ERROR: Failed to install pytest dependencies'
+                    exit 1
+                }
+                # Vérifier que les tests existent
+                if [ -d 'tests' ] && [ '\$(ls -A tests 2>/dev/null | grep -v __pycache__)' ]; then
                     echo 'Running pytest for ${serviceName}...'
-                    pytest tests/ -v --tb=short || exit 1
+                    echo 'Test files found:'
+                    find tests -name 'test_*.py' -type f || echo 'No test_*.py files found'
+                    # Exécuter pytest depuis le répertoire /app pour que les imports fonctionnent
+                    cd /app && python -m pytest tests/ -v --tb=short || exit 1
                     echo 'Tests passed successfully for ${serviceName}'
                 else
-                    echo 'WARNING: No tests directory found'
+                    echo 'WARNING: No tests directory found or tests directory is empty'
                     exit 0
                 fi
             " || {
