@@ -157,12 +157,27 @@ pipeline {
                         echo "WARNING: SonarQube not configured in Jenkins, using direct Docker approach"
                         sh '''
                             echo "Running SonarQube Scanner with Docker..."
-                            # Pour Windows/WSL, utiliser host.docker.internal
-                            # Pour Linux, utiliser --network host ou l'IP du host
+                            echo "Note: Using host.docker.internal to access SonarQube on host"
+                            
+                            # Déterminer l'URL SonarQube selon l'environnement
+                            SONAR_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}"
+                            
+                            # Vérifier que SonarQube est accessible depuis le conteneur
+                            echo "Checking SonarQube connectivity from Docker container..."
+                            docker run --rm --add-host=host.docker.internal:host-gateway \\
+                                curlimages/curl:latest \\
+                                curl -f "${SONAR_URL}/api/system/status" || {
+                                echo "WARNING: Cannot reach SonarQube at ${SONAR_URL}"
+                                echo "Trying alternative: http://172.17.0.1:9000 (Docker bridge network)"
+                                SONAR_URL="http://172.17.0.1:9000"
+                            }
+                            
+                            # Exécuter le scanner avec la bonne URL
                             docker run --rm \\
+                                --add-host=host.docker.internal:host-gateway \\
                                 -v "$(pwd):/usr/src" \\
                                 -w /usr/src \\
-                                -e SONAR_HOST_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}" \\
+                                -e SONAR_HOST_URL="${SONAR_URL}" \\
                                 -e SONAR_TOKEN="${SONAR_TOKEN:-}" \\
                                 sonarsource/sonar-scanner-cli:latest \\
                                 -Dsonar.projectKey=ecolabel-ms \\
@@ -171,6 +186,10 @@ pipeline {
                                 -Dsonar.python.version=3.11 \\
                                 -Dsonar.sourceEncoding=UTF-8 || {
                                 echo "ERROR: SonarQube analysis failed"
+                                echo "Troubleshooting:"
+                                echo "1. Verify SonarQube is running: docker ps | grep sonarqube"
+                                echo "2. Verify SonarQube is accessible: curl http://localhost:9000/api/system/status"
+                                echo "3. Check SONAR_TOKEN is set if authentication is required"
                                 exit 1
                             }
                         '''
