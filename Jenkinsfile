@@ -89,35 +89,14 @@ pipeline {
         }
         
         stage('Build Docker Images') {
-            parallel {
-                stage('Build Parser Service') {
-                    steps {
-                        buildDockerImage('parser-service', '8001')
-                    }
-                }
-                
-                stage('Build NLP Service') {
-                    steps {
-                        buildDockerImage('nlp-ingredients-service', '8003')
-                    }
-                }
-                
-                stage('Build LCA Service') {
-                    steps {
-                        buildDockerImage('lca-lite-service', '8004')
-                    }
-                }
-                
-                stage('Build Scoring Service') {
-                    steps {
-                        buildDockerImage('scoring-service', '8005')
-                    }
-                }
-                
-                stage('Build API Gateway') {
-                    steps {
-                        buildDockerImage('api-gateway-service', '8000')
-                    }
+            steps {
+                script {
+                    echo "=== Images already built during Unit Tests ==="
+                    echo "Skipping rebuild - images were created and tested in previous stage"
+                    sh """
+                        echo "Verifying images exist..."
+                        docker images | grep ${DOCKER_IMAGE_PREFIX} || echo "WARNING: Some images may be missing"
+                    """
                 }
             }
         }
@@ -135,19 +114,19 @@ pipeline {
                         if [ -f "jenkins/scripts/integration-test.sh" ]; then
                             bash jenkins/scripts/integration-test.sh
                         else
-                            # Fallback: démarrage manuel
-                            docker-compose up -d --build
-                            sleep 30
+                            # Fallback: démarrage manuel (sans rebuild)
+                            docker-compose up -d
+                            sleep 10
                             
-                            # Health checks
+                            # Health checks (réduit de 30 à 15 tentatives)
                             echo "Checking API Gateway..."
-                            for i in {1..30}; do
+                            for i in {1..15}; do
                                 if curl -f http://localhost:8000/health > /dev/null 2>&1; then
                                     echo "API Gateway is healthy"
                                     break
                                 fi
-                                echo "Waiting for API Gateway... ($i/30)"
-                                sleep 5
+                                echo "Waiting for API Gateway... ($i/15)"
+                                sleep 3
                             done
                             
                             curl -f http://localhost:8001/health || echo "WARNING: Parser Service health check failed"
@@ -246,11 +225,20 @@ def runUnitTestsInDocker(serviceName) {
         echo "This function uses Docker containers with Python 3.11"
         echo "No venv will be created outside Docker"
         
-        # Vérifier que Docker est disponible
-        if ! command -v docker &> /dev/null; then
-            echo "ERROR: Docker is not available"
+        # Vérifier que Docker est disponible et fonctionne
+        echo "Checking Docker availability..."
+        docker --version || {
+            echo "ERROR: Docker command not found"
             exit 1
-        fi
+        }
+        
+        docker info > /dev/null 2>&1 || {
+            echo "ERROR: Docker is not accessible"
+            echo "This might be a permissions issue with the Docker socket"
+            exit 1
+        }
+        
+        echo "Docker is available and accessible"
         
         # Obtenir le chemin absolu du workspace
         WORKSPACE_DIR=\$(pwd)
@@ -275,16 +263,18 @@ def runUnitTestsInDocker(serviceName) {
             exit 0
         fi
         
-        # Construire l'image de test (identique à l'image de production)
-        echo "Building test image for ${serviceName}..."
-        docker build -t ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test .
+        # Construire l'image (sera réutilisée pour le build de production)
+        # Utiliser BuildKit pour un meilleur cache et des builds plus rapides
+        echo "Building image for ${serviceName} (will be reused for production)..."
+        DOCKER_BUILDKIT=1 docker build -t ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest .
+        docker tag ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest ${DOCKER_IMAGE_PREFIX}-${serviceName}:${IMAGE_TAG}
         
         # Exécuter les tests dans le conteneur
         # On monte seulement les tests (pas le code) pour utiliser le code de l'image
         echo "Running tests in Docker container..."
         docker run --rm \\
             -v "\${SERVICE_DIR}/tests:/app/tests:ro" \\
-            ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test \\
+            ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest \\
             sh -c "
                 # Installer pytest (les dépendances sont déjà installées dans l'image)
                 pip install --no-cache-dir --no-deps pytest pytest-cov pytest-asyncio httpx 2>/dev/null || \\
@@ -299,29 +289,26 @@ def runUnitTestsInDocker(serviceName) {
                 fi
             " || {
                 echo "ERROR: Unit tests failed for ${serviceName}"
-                docker rmi ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test || true
                 exit 1
             }
-        
-        # Nettoyer l'image de test
-        docker rmi ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test || true
         
         echo "${serviceName} unit tests completed successfully"
     """
 }
 
-// Fonction pour construire une image Docker
+// Fonction pour construire une image Docker (dépréciée - images construites pendant les tests)
 def buildDockerImage(serviceName, port) {
     sh """
-        echo "=== Building ${serviceName} ==="
-        
-        cd backend/${serviceName}
-        
-        # Build l'image Docker
-        docker build -t ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest .
-        docker tag ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest ${DOCKER_IMAGE_PREFIX}-${serviceName}:${IMAGE_TAG}
-        
-        echo "${serviceName} image built successfully"
+        echo "=== Image ${serviceName} should already exist from Unit Tests ==="
+        if docker images | grep -q "${DOCKER_IMAGE_PREFIX}-${serviceName}.*latest"; then
+            echo "${serviceName} image already exists - skipping build"
+        else
+            echo "WARNING: Image not found, building now..."
+            cd backend/${serviceName}
+            docker build -t ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest .
+            docker tag ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest ${DOCKER_IMAGE_PREFIX}-${serviceName}:${IMAGE_TAG}
+        fi
+        echo "${serviceName} image ready"
         echo "   Image: ${DOCKER_IMAGE_PREFIX}-${serviceName}:${IMAGE_TAG}"
     """
 }

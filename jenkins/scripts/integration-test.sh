@@ -7,7 +7,7 @@ echo "=== Starting Integration Tests ==="
 check_service() {
     local service_name=$1
     local url=$2
-    local max_attempts=30
+    local max_attempts=15
     local attempt=1
     
     echo "Checking ${service_name} at ${url}..."
@@ -26,13 +26,13 @@ check_service() {
     return 1
 }
 
-# Démarrer les services
-echo "Starting services with docker-compose..."
-docker-compose up -d --build
+# Démarrer les services (sans rebuild - images déjà construites)
+echo "Starting services with docker-compose (using existing images)..."
+docker-compose up -d
 
-# Attendre que les services soient prêts
+# Attendre que les services soient prêts (réduit de 30s à 10s)
 echo "Waiting for services to be ready..."
-sleep 30
+sleep 10
 
 # Health checks pour chaque service
 echo ""
