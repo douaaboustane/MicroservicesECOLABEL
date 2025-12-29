@@ -185,59 +185,6 @@ pipeline {
                             exit 1
                         }
                     """
-                    
-                    // Ancien code avec try-catch (gardé pour référence mais ne sera pas exécuté)
-                    /*
-                    try {
-                        echo "WARNING: SonarQube not configured in Jenkins, using direct Docker approach"
-                        sh '''
-                            echo "Running SonarQube Scanner with Docker..."
-                            echo "Note: Using host.docker.internal to access SonarQube on host"
-                            
-                            # Déterminer l'URL SonarQube selon l'environnement
-                            SONAR_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}"
-                            
-                            # Vérifier que le token est présent (depuis les variables d'environnement Jenkins)
-                            if [ -z "${SONAR_TOKEN:-}" ]; then
-                                echo "ERROR: SONAR_TOKEN is not set!"
-                                echo ""
-                                echo "SOLUTION: Configurez le token SonarQube dans Jenkins:"
-                                echo "1. Manage Jenkins → Configure System"
-                                echo "2. Section 'Global properties' → Cocher 'Environment variables'"
-                                echo "3. Ajouter: Name=SONAR_TOKEN, Value=votre-token-sonarqube"
-                                echo "4. OU configurez SonarQube dans: SonarQube servers → Server authentication token"
-                                echo ""
-                                exit 1
-                            fi
-                            
-                            echo "SonarQube URL: ${SONAR_URL}"
-                            echo "Token configured: ${SONAR_TOKEN:0:10}..." # Afficher seulement les 10 premiers caractères
-                            
-                            # Exécuter le scanner avec la bonne URL et le token
-                            docker run --rm \\
-                                --add-host=host.docker.internal:host-gateway \\
-                                -v "$(pwd):/usr/src" \\
-                                -w /usr/src \\
-                                -e SONAR_HOST_URL="${SONAR_URL}" \\
-                                -e SONAR_TOKEN="${SONAR_TOKEN}" \\
-                                sonarsource/sonar-scanner-cli:latest \\
-                                -Dsonar.projectKey=ecolabel-ms \\
-                                -Dsonar.sources=backend \\
-                                -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
-                                -Dsonar.python.version=3.11 \\
-                                -Dsonar.sourceEncoding=UTF-8 \\
-                                -Dsonar.login="${SONAR_TOKEN}" || {
-                                echo "ERROR: SonarQube analysis failed"
-                                echo "Troubleshooting:"
-                                echo "1. Verify SonarQube is running: docker ps | grep sonarqube"
-                                echo "2. Verify SonarQube is accessible: curl http://localhost:9000/api/system/status"
-                                echo "3. Verify SONAR_TOKEN is set and valid"
-                                echo "4. Check token permissions in SonarQube: My Account → Security → Tokens"
-                                exit 1
-                            }
-                        '''
-                    }
-                }
             }
         }
         
