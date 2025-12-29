@@ -182,21 +182,16 @@ pipeline {
                             # Déterminer l'URL SonarQube selon l'environnement
                             SONAR_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}"
                             
-                            # Vérifier que SonarQube est accessible depuis le conteneur
-                            echo "Checking SonarQube connectivity from Docker container..."
-                            docker run --rm --add-host=host.docker.internal:host-gateway \\
-                                curlimages/curl:latest \\
-                                curl -f "${SONAR_URL}/api/system/status" || {
-                                echo "WARNING: Cannot reach SonarQube at ${SONAR_URL}"
-                                echo "Trying alternative: http://172.17.0.1:9000 (Docker bridge network)"
-                                SONAR_URL="http://172.17.0.1:9000"
-                            }
-                            
-                            # Vérifier que le token est présent
+                            # Vérifier que le token est présent (depuis les variables d'environnement Jenkins)
                             if [ -z "${SONAR_TOKEN:-}" ]; then
                                 echo "ERROR: SONAR_TOKEN is not set!"
-                                echo "Please set SONAR_TOKEN environment variable in Jenkins or configure SonarQube in Jenkins"
-                                echo "You can set it in: Manage Jenkins → Configure System → Global properties → Environment variables"
+                                echo ""
+                                echo "SOLUTION: Configurez le token SonarQube dans Jenkins:"
+                                echo "1. Manage Jenkins → Configure System"
+                                echo "2. Section 'Global properties' → Cocher 'Environment variables'"
+                                echo "3. Ajouter: Name=SONAR_TOKEN, Value=votre-token-sonarqube"
+                                echo "4. OU configurez SonarQube dans: SonarQube servers → Server authentication token"
+                                echo ""
                                 exit 1
                             fi
                             
