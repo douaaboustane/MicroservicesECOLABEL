@@ -20,7 +20,7 @@ pipeline {
     
     options {
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        timeout(time: 30, unit: 'MINUTES')
+        timeout(time: 60, unit: 'MINUTES')
         timestamps()
     }
     
@@ -58,51 +58,31 @@ pipeline {
             parallel {
                 stage('Test Parser Service') {
                     steps {
-                        dir('backend/parser-service') {
-                            script {
-                                testPythonService('parser-service')
-                            }
-                        }
+                        runUnitTestsInDocker('parser-service')
                     }
                 }
                 
                 stage('Test NLP Service') {
                     steps {
-                        dir('backend/nlp-ingredients-service') {
-                            script {
-                                testPythonService('nlp-ingredients-service')
-                            }
-                        }
+                        runUnitTestsInDocker('nlp-ingredients-service')
                     }
                 }
                 
                 stage('Test LCA Service') {
                     steps {
-                        dir('backend/lca-lite-service') {
-                            script {
-                                testPythonService('lca-lite-service')
-                            }
-                        }
+                        runUnitTestsInDocker('lca-lite-service')
                     }
                 }
                 
                 stage('Test Scoring Service') {
                     steps {
-                        dir('backend/scoring-service') {
-                            script {
-                                testPythonService('scoring-service')
-                            }
-                        }
+                        runUnitTestsInDocker('scoring-service')
                     }
                 }
                 
                 stage('Test API Gateway') {
                     steps {
-                        dir('backend/api-gateway-service') {
-                            script {
-                                testPythonService('api-gateway-service')
-                            }
-                        }
+                        runUnitTestsInDocker('api-gateway-service')
                     }
                 }
             }
@@ -258,39 +238,75 @@ pipeline {
     }
 }
 
-// Fonction pour tester un service Python
-def testPythonService(serviceName) {
+
+// Fonction pour exécuter les tests unitaires dans un conteneur Docker
+def runUnitTestsInDocker(serviceName) {
     sh """
-        echo "=== Testing ${serviceName} ==="
+        echo "=== Running Unit Tests for ${serviceName} in Docker ==="
+        echo "This function uses Docker containers with Python 3.11"
+        echo "No venv will be created outside Docker"
         
-        # Créer un environnement virtuel
-        python3 -m venv venv || true
-        source venv/bin/activate || . venv/bin/activate
-        
-        # Installer les dépendances
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov || true
-        
-        # Exécuter les tests
-        if [ -d "tests" ] && [ "\$(ls -A tests)" ]; then
-            echo "Running tests for ${serviceName}..."
-            pytest tests/ -v --cov=app --cov-report=xml --cov-report=html || echo "WARNING: Some tests failed"
-        else
-            echo "WARNING: No tests found for ${serviceName}"
+        # Vérifier que Docker est disponible
+        if ! command -v docker &> /dev/null; then
+            echo "ERROR: Docker is not available"
+            exit 1
         fi
         
-        # Archiver les rapports de couverture
-        if [ -f "coverage.xml" ]; then
-            archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
-        fi
-        if [ -d "htmlcov" ]; then
-            archiveArtifacts artifacts: 'htmlcov/**', allowEmptyArchive: true
+        # Obtenir le chemin absolu du workspace
+        WORKSPACE_DIR=\$(pwd)
+        SERVICE_DIR="\${WORKSPACE_DIR}/backend/${serviceName}"
+        
+        if [ ! -d "\${SERVICE_DIR}" ]; then
+            echo "WARNING: Directory \${SERVICE_DIR} does not exist, skipping tests"
+            exit 0
         fi
         
-        # Nettoyer
-        deactivate || true
-        rm -rf venv || true
+        cd "\${SERVICE_DIR}"
+        
+        # Vérifier si des tests existent
+        if [ ! -d "tests" ] || [ -z "\$(ls -A tests 2>/dev/null)" ]; then
+            echo "WARNING: No tests found for ${serviceName}, skipping"
+            exit 0
+        fi
+        
+        # Vérifier si Dockerfile existe
+        if [ ! -f "Dockerfile" ]; then
+            echo "WARNING: Dockerfile not found for ${serviceName}, skipping tests"
+            exit 0
+        fi
+        
+        # Construire l'image de test (identique à l'image de production)
+        echo "Building test image for ${serviceName}..."
+        docker build -t ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test .
+        
+        # Exécuter les tests dans le conteneur
+        # On monte seulement les tests (pas le code) pour utiliser le code de l'image
+        echo "Running tests in Docker container..."
+        docker run --rm \\
+            -v "\${SERVICE_DIR}/tests:/app/tests:ro" \\
+            ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test \\
+            sh -c "
+                # Installer pytest (les dépendances sont déjà installées dans l'image)
+                pip install --no-cache-dir --no-deps pytest pytest-cov pytest-asyncio httpx 2>/dev/null || \\
+                pip install --no-cache-dir pytest pytest-cov pytest-asyncio httpx
+                if [ -d 'tests' ] && [ '\$(ls -A tests 2>/dev/null)' ]; then
+                    echo 'Running pytest for ${serviceName}...'
+                    pytest tests/ -v --tb=short || exit 1
+                    echo 'Tests passed successfully for ${serviceName}'
+                else
+                    echo 'WARNING: No tests directory found'
+                    exit 0
+                fi
+            " || {
+                echo "ERROR: Unit tests failed for ${serviceName}"
+                docker rmi ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test || true
+                exit 1
+            }
+        
+        # Nettoyer l'image de test
+        docker rmi ${DOCKER_IMAGE_PREFIX}-${serviceName}-test:test || true
+        
+        echo "${serviceName} unit tests completed successfully"
     """
 }
 
