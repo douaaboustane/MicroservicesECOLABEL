@@ -270,10 +270,14 @@ def runUnitTestsInDocker(serviceName) {
         docker tag ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest ${DOCKER_IMAGE_PREFIX}-${serviceName}:${IMAGE_TAG}
         
         # Exécuter les tests dans le conteneur
-        # On monte seulement les tests (pas le code) pour utiliser le code de l'image
+        # On monte les tests et pytest.ini si disponible
         echo "Running tests in Docker container..."
+        MOUNT_ARGS="-v \${SERVICE_DIR}/tests:/app/tests:ro"
+        if [ -f "\${SERVICE_DIR}/pytest.ini" ]; then
+            MOUNT_ARGS="\${MOUNT_ARGS} -v \${SERVICE_DIR}/pytest.ini:/app/pytest.ini:ro"
+        fi
         docker run --rm \\
-            -v "\${SERVICE_DIR}/tests:/app/tests:ro" \\
+            \${MOUNT_ARGS} \\
             ${DOCKER_IMAGE_PREFIX}-${serviceName}:latest \\
             sh -c "
                 # Installer pytest avec toutes ses dépendances
@@ -281,16 +285,33 @@ def runUnitTestsInDocker(serviceName) {
                     echo 'ERROR: Failed to install pytest dependencies'
                     exit 1
                 }
+                # Vérifier la structure
+                echo '=== Debug: Directory structure ==='
+                ls -la /app/ || echo 'Cannot list /app'
+                ls -la /app/tests/ || echo 'Cannot list /app/tests'
+                ls -la /app/app/ || echo 'Cannot list /app/app'
+                echo ''
+                echo '=== Debug: Test files ==='
+                find /app/tests -name '*.py' -type f || echo 'No Python files found in tests'
+                echo ''
                 # Vérifier que les tests existent
-                if [ -d 'tests' ] && [ '\$(ls -A tests 2>/dev/null | grep -v __pycache__)' ]; then
+                if [ -d '/app/tests' ] && [ '\$(ls -A /app/tests 2>/dev/null | grep -v __pycache__ | grep -v .pyc)' ]; then
                     echo 'Running pytest for ${serviceName}...'
-                    echo 'Test files found:'
-                    find tests -name 'test_*.py' -type f || echo 'No test_*.py files found'
-                    # Exécuter pytest depuis le répertoire /app pour que les imports fonctionnent
-                    cd /app && python -m pytest tests/ -v --tb=short || exit 1
+                    echo 'Current directory: \$(pwd)'
+                    echo 'PYTHONPATH: \${PYTHONPATH:-not set}'
+                    # Configurer PYTHONPATH pour que les imports fonctionnent
+                    export PYTHONPATH=/app:\${PYTHONPATH}
+                    # Exécuter pytest depuis /app avec le bon PYTHONPATH
+                    cd /app && python -m pytest tests/ -v --tb=short --collect-only || {
+                        echo 'ERROR: pytest collection failed'
+                        echo 'Trying alternative: python -m pytest /app/tests/ -v'
+                        python -m pytest /app/tests/ -v --tb=short || exit 1
+                    }
                     echo 'Tests passed successfully for ${serviceName}'
                 else
                     echo 'WARNING: No tests directory found or tests directory is empty'
+                    echo 'Contents of /app/tests:'
+                    ls -la /app/tests/ || echo 'Directory does not exist'
                     exit 0
                 fi
             " || {
