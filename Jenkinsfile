@@ -395,7 +395,11 @@ pipeline {
             }
         }
         always {
-            cleanWs()
+            script {
+                // Nettoyage optionnel - retiré car cause des erreurs de contexte
+                // cleanWs()
+                echo "Pipeline execution completed"
+            }
         }
     }
 }
