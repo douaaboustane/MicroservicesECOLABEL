@@ -144,6 +144,16 @@ pipeline {
                                     echo "Converted localhost to host.docker.internal: ${SONAR_URL}"
                                 fi
                                 
+                                # Vérifier que le token est présent
+                                if [ -z "${SONAR_TOKEN}" ]; then
+                                    echo "ERROR: SONAR_TOKEN is not set!"
+                                    echo "Please configure SonarQube token in Jenkins: Manage Jenkins → Configure System → SonarQube servers"
+                                    exit 1
+                                fi
+                                
+                                echo "SonarQube URL: ${SONAR_URL}"
+                                echo "Token configured: ${SONAR_TOKEN:0:10}..." # Afficher seulement les 10 premiers caractères pour sécurité
+                                
                                 docker run --rm \\
                                     --add-host=host.docker.internal:host-gateway \\
                                     -v "$(pwd):/usr/src" \\
@@ -155,8 +165,10 @@ pipeline {
                                     -Dsonar.sources=backend \\
                                     -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
                                     -Dsonar.python.version=3.11 \\
-                                    -Dsonar.sourceEncoding=UTF-8 || {
+                                    -Dsonar.sourceEncoding=UTF-8 \\
+                                    -Dsonar.login="${SONAR_TOKEN}" || {
                                     echo "ERROR: SonarQube analysis failed"
+                                    echo "Check that the token is valid and has the correct permissions"
                                     exit 1
                                 }
                             '''
@@ -180,24 +192,37 @@ pipeline {
                                 SONAR_URL="http://172.17.0.1:9000"
                             }
                             
-                            # Exécuter le scanner avec la bonne URL
+                            # Vérifier que le token est présent
+                            if [ -z "${SONAR_TOKEN:-}" ]; then
+                                echo "ERROR: SONAR_TOKEN is not set!"
+                                echo "Please set SONAR_TOKEN environment variable in Jenkins or configure SonarQube in Jenkins"
+                                echo "You can set it in: Manage Jenkins → Configure System → Global properties → Environment variables"
+                                exit 1
+                            fi
+                            
+                            echo "SonarQube URL: ${SONAR_URL}"
+                            echo "Token configured: ${SONAR_TOKEN:0:10}..." # Afficher seulement les 10 premiers caractères
+                            
+                            # Exécuter le scanner avec la bonne URL et le token
                             docker run --rm \\
                                 --add-host=host.docker.internal:host-gateway \\
                                 -v "$(pwd):/usr/src" \\
                                 -w /usr/src \\
                                 -e SONAR_HOST_URL="${SONAR_URL}" \\
-                                -e SONAR_TOKEN="${SONAR_TOKEN:-}" \\
+                                -e SONAR_TOKEN="${SONAR_TOKEN}" \\
                                 sonarsource/sonar-scanner-cli:latest \\
                                 -Dsonar.projectKey=ecolabel-ms \\
                                 -Dsonar.sources=backend \\
                                 -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
                                 -Dsonar.python.version=3.11 \\
-                                -Dsonar.sourceEncoding=UTF-8 || {
+                                -Dsonar.sourceEncoding=UTF-8 \\
+                                -Dsonar.login="${SONAR_TOKEN}" || {
                                 echo "ERROR: SonarQube analysis failed"
                                 echo "Troubleshooting:"
                                 echo "1. Verify SonarQube is running: docker ps | grep sonarqube"
                                 echo "2. Verify SonarQube is accessible: curl http://localhost:9000/api/system/status"
-                                echo "3. Check SONAR_TOKEN is set if authentication is required"
+                                echo "3. Verify SONAR_TOKEN is set and valid"
+                                echo "4. Check token permissions in SonarQube: My Account → Security → Tokens"
                                 exit 1
                             }
                         '''
