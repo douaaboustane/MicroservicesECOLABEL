@@ -114,66 +114,81 @@ pipeline {
                     
                     // Vérifier la disponibilité de SonarQube
                     sh '''
-                        echo "Checking SonarQube availability at ${SONAR_HOST_URL:-http://localhost:9000}..."
+                        echo "Checking SonarQube availability at http://localhost:9000..."
                         # Attendre que SonarQube soit prêt (max 2 minutes)
-                        for i in {1..24}; do
-                            if curl -f "${SONAR_HOST_URL:-http://localhost:9000}/api/system/status" > /dev/null 2>&1; then
+                        MAX_ATTEMPTS=24
+                        ATTEMPT=1
+                        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+                            if curl -f "http://localhost:9000/api/system/status" > /dev/null 2>&1; then
                                 echo "SonarQube is ready"
                                 break
                             fi
-                            if [ $i -eq 24 ]; then
-                                echo "ERROR: SonarQube is not accessible at ${SONAR_HOST_URL:-http://localhost:9000}"
+                            if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+                                echo "ERROR: SonarQube is not accessible at http://localhost:9000"
                                 echo "Please ensure SonarQube is running: docker-compose -f docker-compose.sonarqube.yml up -d"
                                 exit 1
                             fi
-                            echo "Waiting for SonarQube... ($i/24)"
+                            echo "Waiting for SonarQube... ($ATTEMPT/$MAX_ATTEMPTS)"
                             sleep 5
+                            ATTEMPT=$((ATTEMPT + 1))
                         done
                     '''
                     
-                    // Utiliser withSonarQubeEnv si configuré dans Jenkins, sinon utiliser Docker directement
-                    try {
-                        withSonarQubeEnv('SonarQube') {
-                            sh '''
-                                echo "Using Jenkins SonarQube configuration..."
-                                
-                                # Convertir localhost en host.docker.internal pour Docker
-                                SONAR_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}"
-                                if echo "${SONAR_URL}" | grep -q "localhost"; then
-                                    SONAR_URL=$(echo "${SONAR_URL}" | sed 's/localhost/host.docker.internal/g')
-                                    echo "Converted localhost to host.docker.internal: ${SONAR_URL}"
-                                fi
-                                
-                                # Vérifier que le token est présent
-                                if [ -z "${SONAR_TOKEN}" ]; then
-                                    echo "ERROR: SONAR_TOKEN is not set!"
-                                    echo "Please configure SonarQube token in Jenkins: Manage Jenkins → Configure System → SonarQube servers"
-                                    exit 1
-                                fi
-                                
-                                echo "SonarQube URL: ${SONAR_URL}"
-                                echo "Token configured: ${SONAR_TOKEN:0:10}..." # Afficher seulement les 10 premiers caractères pour sécurité
-                                
-                                docker run --rm \\
-                                    --add-host=host.docker.internal:host-gateway \\
-                                    -v "$(pwd):/usr/src" \\
-                                    -w /usr/src \\
-                                    -e SONAR_HOST_URL="${SONAR_URL}" \\
-                                    -e SONAR_TOKEN="${SONAR_TOKEN}" \\
-                                    sonarsource/sonar-scanner-cli:latest \\
-                                    -Dsonar.projectKey=ecolabel-ms \\
-                                    -Dsonar.sources=backend \\
-                                    -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
-                                    -Dsonar.python.version=3.11 \\
-                                    -Dsonar.sourceEncoding=UTF-8 \\
-                                    -Dsonar.login="${SONAR_TOKEN}" || {
-                                    echo "ERROR: SonarQube analysis failed"
-                                    echo "Check that the token is valid and has the correct permissions"
-                                    exit 1
-                                }
-                            '''
+                    // Essayer d'utiliser withSonarQubeEnv, sinon utiliser les variables d'environnement globales
+                    def sonarToken = env.SONAR_TOKEN ?: ''
+                    def sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
+                    
+                    if (!sonarToken) {
+                        echo "WARNING: SONAR_TOKEN not found in environment variables"
+                        echo "Trying to get token from SonarQube configuration..."
+                        try {
+                            withSonarQubeEnv('SonarQube') {
+                                sonarToken = env.SONAR_TOKEN ?: ''
+                                sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
+                            }
+                        } catch (Exception e) {
+                            echo "WARNING: SonarQube not configured in Jenkins"
                         }
-                    } catch (Exception e) {
+                    }
+                    
+                    if (!sonarToken) {
+                        error("SONAR_TOKEN is not configured! Please set it in: Manage Jenkins → Configure System → Global properties → Environment variables (Name: SONAR_TOKEN)")
+                    }
+                    
+                    sh """
+                        echo "Using SonarQube configuration..."
+                        echo "SonarQube URL: ${sonarUrl}"
+                        echo "Token configured: ${sonarToken.take(10)}..."
+                        
+                        # Convertir localhost en host.docker.internal pour Docker
+                        SONAR_URL="${sonarUrl}"
+                        if echo "\${SONAR_URL}" | grep -q "localhost"; then
+                            SONAR_URL=\$(echo "\${SONAR_URL}" | sed 's/localhost/host.docker.internal/g')
+                            echo "Converted localhost to host.docker.internal: \${SONAR_URL}"
+                        fi
+                        
+                        docker run --rm \\
+                            --add-host=host.docker.internal:host-gateway \\
+                            -v "\$(pwd):/usr/src" \\
+                            -w /usr/src \\
+                            -e SONAR_HOST_URL="\${SONAR_URL}" \\
+                            -e SONAR_TOKEN="${sonarToken}" \\
+                            sonarsource/sonar-scanner-cli:latest \\
+                            -Dsonar.projectKey=ecolabel-ms \\
+                            -Dsonar.sources=backend \\
+                            -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
+                            -Dsonar.python.version=3.11 \\
+                            -Dsonar.sourceEncoding=UTF-8 \\
+                            -Dsonar.login="${sonarToken}" || {
+                            echo "ERROR: SonarQube analysis failed"
+                            echo "Check that the token is valid and has the correct permissions"
+                            exit 1
+                        }
+                    """
+                    
+                    // Ancien code avec try-catch (gardé pour référence mais ne sera pas exécuté)
+                    /*
+                    try {
                         echo "WARNING: SonarQube not configured in Jenkins, using direct Docker approach"
                         sh '''
                             echo "Running SonarQube Scanner with Docker..."
