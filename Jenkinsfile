@@ -136,12 +136,20 @@ pipeline {
                         withSonarQubeEnv('SonarQube') {
                             sh '''
                                 echo "Using Jenkins SonarQube configuration..."
+                                
+                                # Convertir localhost en host.docker.internal pour Docker
+                                SONAR_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}"
+                                if echo "${SONAR_URL}" | grep -q "localhost"; then
+                                    SONAR_URL=$(echo "${SONAR_URL}" | sed 's/localhost/host.docker.internal/g')
+                                    echo "Converted localhost to host.docker.internal: ${SONAR_URL}"
+                                fi
+                                
                                 docker run --rm \\
+                                    --add-host=host.docker.internal:host-gateway \\
                                     -v "$(pwd):/usr/src" \\
                                     -w /usr/src \\
-                                    -e SONAR_HOST_URL="${SONAR_HOST_URL}" \\
+                                    -e SONAR_HOST_URL="${SONAR_URL}" \\
                                     -e SONAR_TOKEN="${SONAR_TOKEN}" \\
-                                    --network host \\
                                     sonarsource/sonar-scanner-cli:latest \\
                                     -Dsonar.projectKey=ecolabel-ms \\
                                     -Dsonar.sources=backend \\
