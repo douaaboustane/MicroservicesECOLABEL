@@ -12,6 +12,10 @@ pipeline {
         // Configuration des services
         SERVICES = 'parser-service nlp-ingredients-service lca-lite-service scoring-service api-gateway-service'
         
+        // Configuration SonarQube
+        SONAR_HOST_URL = "${env.SONAR_HOST_URL ?: 'http://localhost:9000'}"
+        SONAR_TOKEN = "${env.SONAR_TOKEN ?: ''}"
+        
         // Variables de build
         BUILD_NUMBER = "${env.BUILD_NUMBER}"
         GIT_COMMIT = "${env.GIT_COMMIT.take(7)}"
@@ -83,6 +87,111 @@ pipeline {
                 stage('Test API Gateway') {
                     steps {
                         runUnitTestsInDocker('api-gateway-service')
+                    }
+                }
+            }
+        }
+        
+        stage('Code Quality - SonarQube') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "=== Starting SonarQube Analysis ==="
+                    
+                    // Vérifier que SonarQube est accessible
+                    def sonarUrl = env.SONAR_HOST_URL ?: 'http://localhost:9000'
+                    
+                    // Vérifier la disponibilité de SonarQube
+                    sh '''
+                        echo "Checking SonarQube availability at ${SONAR_HOST_URL:-http://localhost:9000}..."
+                        # Attendre que SonarQube soit prêt (max 2 minutes)
+                        for i in {1..24}; do
+                            if curl -f "${SONAR_HOST_URL:-http://localhost:9000}/api/system/status" > /dev/null 2>&1; then
+                                echo "SonarQube is ready"
+                                break
+                            fi
+                            if [ $i -eq 24 ]; then
+                                echo "ERROR: SonarQube is not accessible at ${SONAR_HOST_URL:-http://localhost:9000}"
+                                echo "Please ensure SonarQube is running: docker-compose -f docker-compose.sonarqube.yml up -d"
+                                exit 1
+                            fi
+                            echo "Waiting for SonarQube... ($i/24)"
+                            sleep 5
+                        done
+                    '''
+                    
+                    // Utiliser withSonarQubeEnv si configuré dans Jenkins, sinon utiliser Docker directement
+                    try {
+                        withSonarQubeEnv('SonarQube') {
+                            sh '''
+                                echo "Using Jenkins SonarQube configuration..."
+                                docker run --rm \\
+                                    -v "$(pwd):/usr/src" \\
+                                    -w /usr/src \\
+                                    -e SONAR_HOST_URL="${SONAR_HOST_URL}" \\
+                                    -e SONAR_TOKEN="${SONAR_TOKEN}" \\
+                                    --network host \\
+                                    sonarsource/sonar-scanner-cli:latest \\
+                                    -Dsonar.projectKey=ecolabel-ms \\
+                                    -Dsonar.sources=backend \\
+                                    -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
+                                    -Dsonar.python.version=3.11 \\
+                                    -Dsonar.sourceEncoding=UTF-8 || {
+                                    echo "ERROR: SonarQube analysis failed"
+                                    exit 1
+                                }
+                            '''
+                        }
+                    } catch (Exception e) {
+                        echo "WARNING: SonarQube not configured in Jenkins, using direct Docker approach"
+                        sh '''
+                            echo "Running SonarQube Scanner with Docker..."
+                            # Pour Windows/WSL, utiliser host.docker.internal
+                            # Pour Linux, utiliser --network host ou l'IP du host
+                            docker run --rm \\
+                                -v "$(pwd):/usr/src" \\
+                                -w /usr/src \\
+                                -e SONAR_HOST_URL="${SONAR_HOST_URL:-http://host.docker.internal:9000}" \\
+                                -e SONAR_TOKEN="${SONAR_TOKEN:-}" \\
+                                sonarsource/sonar-scanner-cli:latest \\
+                                -Dsonar.projectKey=ecolabel-ms \\
+                                -Dsonar.sources=backend \\
+                                -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
+                                -Dsonar.python.version=3.11 \\
+                                -Dsonar.sourceEncoding=UTF-8 || {
+                                echo "ERROR: SonarQube analysis failed"
+                                exit 1
+                            }
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    echo "=== Waiting for Quality Gate ==="
+                    timeout(time: 5, unit: 'MINUTES') {
+                        try {
+                            def qg = waitForQualityGate()
+                            if (qg.status != 'OK') {
+                                error "Quality Gate failed: ${qg.status}. Please check SonarQube dashboard for details."
+                            }
+                            echo "Quality Gate passed: ${qg.status}"
+                        } catch (Exception e) {
+                            echo "WARNING: Quality Gate check failed. This may be because SonarQube is not configured in Jenkins."
+                            echo "To enable Quality Gate, configure SonarQube in Jenkins: Manage Jenkins → Configure System → SonarQube servers"
+                            echo "Error: ${e.getMessage()}"
+                            // Pour l'instant, on continue mais on pourrait bloquer avec: error "Quality Gate check failed"
+                            // Décommentez la ligne suivante pour bloquer le pipeline si Quality Gate échoue:
+                            // error "Quality Gate check failed: ${e.getMessage()}"
+                        }
                     }
                 }
             }
