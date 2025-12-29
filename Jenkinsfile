@@ -94,11 +94,20 @@ pipeline {
         
         stage('Code Quality - SonarQube') {
             when {
-                branch 'main'
+                anyOf {
+                    branch 'main'
+                    branch 'origin/main'
+                    expression { 
+                        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'
+                        echo "DEBUG: Current branch detected: ${branchName}"
+                        return branchName.contains('main')
+                    }
+                }
             }
             steps {
                 script {
                     echo "=== Starting SonarQube Analysis ==="
+                    echo "DEBUG: Branch name: ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'}"
                     
                     // Vérifier que SonarQube est accessible
                     def sonarUrl = env.SONAR_HOST_URL ?: 'http://localhost:9000'
@@ -172,11 +181,19 @@ pipeline {
         
         stage('Quality Gate') {
             when {
-                branch 'main'
+                anyOf {
+                    branch 'main'
+                    branch 'origin/main'
+                    expression { 
+                        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'
+                        return branchName.contains('main')
+                    }
+                }
             }
             steps {
                 script {
                     echo "=== Waiting for Quality Gate ==="
+                    echo "DEBUG: Branch name: ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'}"
                     timeout(time: 5, unit: 'MINUTES') {
                         try {
                             def qg = waitForQualityGate()
