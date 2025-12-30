@@ -9,4 +9,5 @@ python-dotenv==1.0.0
 pandas==2.1.4
 numpy==1.26.3
 aiofiles==23.2.1
+py-eureka-client==0.13.2
 

@@ -15,11 +15,15 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://ecolabel:ecolabel123@api-db:5432/ecolabel_api"
     
-    # Microservices URLs (dans le réseau Docker)
+    # Microservices URLs (dans le réseau Docker) - Fallback si Eureka n'est pas disponible
     PARSER_SERVICE_URL: str = "http://parser-service:8001"
     NLP_SERVICE_URL: str = "http://nlp-service:8003"
     LCA_SERVICE_URL: str = "http://lca-service:8004"
     SCORING_SERVICE_URL: str = "http://scoring-service:8005"
+    
+    # Eureka Service Discovery
+    EUREKA_SERVER_URL: str = "http://eureka-server:8761/eureka"
+    EUREKA_ENABLED: bool = True
     
     # Auth
     JWT_SECRET: str = "your-secret-key-change-in-production-please-use-strong-secret"

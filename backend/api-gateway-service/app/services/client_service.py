@@ -4,16 +4,30 @@ Client HTTP pour communiquer avec les microservices
 import httpx
 from typing import Dict, Any, List, Optional
 from app.config import settings
+from app.services.eureka_service import EurekaDiscovery
 
 
 class MicroserviceClient:
     """Client HTTP pour communiquer avec les microservices"""
     
     def __init__(self):
+        # Utiliser Eureka pour la découverte de services si activé
+        self._use_eureka = settings.EUREKA_ENABLED
+        self._eureka_discovery = EurekaDiscovery() if self._use_eureka else None
+        # URLs par défaut (fallback si Eureka n'est pas disponible)
         self.parser_url = settings.PARSER_SERVICE_URL
         self.nlp_url = settings.NLP_SERVICE_URL
         self.lca_url = settings.LCA_SERVICE_URL
         self.scoring_url = settings.SCORING_SERVICE_URL
+    
+    async def _get_service_url(self, service_name: str, default_url: str) -> str:
+        """Récupère l'URL d'un service depuis Eureka ou utilise l'URL par défaut"""
+        if self._use_eureka and self._eureka_discovery:
+            try:
+                return await self._eureka_discovery.get_service_url(service_name)
+            except Exception as e:
+                print(f"Warning: Eureka discovery failed for {service_name}, using default URL: {e}")
+        return default_url
     
     async def call_parser_service(
         self,
@@ -22,6 +36,9 @@ class MicroserviceClient:
     ) -> Dict[str, Any]:
         """Appelle le Parser Service pour OCR et extraction"""
         try:
+            # Récupérer l'URL depuis Eureka si disponible
+            parser_url = await self._get_service_url("PARSER-SERVICE", self.parser_url)
+            
             # Déterminer le type MIME basé sur l'extension
             file_ext = filename.split('.')[-1].lower() if '.' in filename else 'jpg'
             mime_type_map = {
@@ -37,7 +54,7 @@ class MicroserviceClient:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 files = {"file": (filename, image_file, mime_type)}
                 response = await client.post(
-                    f"{self.parser_url}/product/parse/single",
+                    f"{parser_url}/product/parse/single",
                     files=files
                 )
                 
@@ -67,9 +84,12 @@ class MicroserviceClient:
         normalize: bool = True
     ) -> Dict[str, Any]:
         """Appelle le NLP Service pour extraction d'ingrédients"""
+        # Récupérer l'URL depuis Eureka si disponible
+        nlp_url = await self._get_service_url("NLP-SERVICE", self.nlp_url)
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
-                f"{self.nlp_url}/nlp/extract",
+                f"{nlp_url}/nlp/extract",
                 json={
                     "text": ingredients_text,
                     "normalize": normalize,
@@ -90,6 +110,9 @@ class MicroserviceClient:
     ) -> Dict[str, Any]:
         """Appelle le LCA Service pour calcul d'impacts"""
         try:
+            # Récupérer l'URL depuis Eureka si disponible
+            lca_url = await self._get_service_url("LCA-SERVICE", self.lca_url)
+            
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Nettoyer les ingrédients pour enlever les None explicites
                 cleaned_ingredients = []
@@ -118,7 +141,7 @@ class MicroserviceClient:
                 print(f"LCA Request payload: {payload_str}", flush=True)
                 
                 response = await client.post(
-                    f"{self.lca_url}/lca/calc",
+                    f"{lca_url}/lca/calc",
                     json=payload
                 )
                 
@@ -180,6 +203,9 @@ class MicroserviceClient:
         method: str = "hybrid"
     ) -> Dict[str, Any]:
         """Appelle le Scoring Service pour calcul du score"""
+        # Récupérer l'URL depuis Eureka si disponible
+        scoring_url = await self._get_service_url("SCORING-SERVICE", self.scoring_url)
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             # Préparer les données pour le scoring
             ingredients_list = [
@@ -191,7 +217,7 @@ class MicroserviceClient:
             packaging_info = nlp_data.get("packaging", {})
             
             response = await client.post(
-                f"{self.scoring_url}/score/calculate",
+                f"{scoring_url}/score/calculate",
                 json={
                     "lca_data": {
                         "co2_kg": lca_data.get("total_impacts", {}).get("co2_kg", 0),

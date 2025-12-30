@@ -17,6 +17,7 @@ from app.services.label_detector import LabelDetector
 from app.services.taxonomy_loader import TaxonomyLoader
 from app.services.packaging_extractor import PackagingExtractor
 from app.services.origin_extractor import OriginExtractor
+from app.services.eureka_service import EurekaService
 
 # Créer les tables
 Base.metadata.create_all(bind=engine)
@@ -57,6 +58,9 @@ async def startup_event():
     print("=" * 80)
     print(f"📦 Version: {settings.API_VERSION}")
     print(f"🌐 Port: {settings.PORT}")
+    # Enregistrer le service auprès d'Eureka
+    if settings.EUREKA_ENABLED:
+        await EurekaService.register()
     print(f"\n🧠 Modèle NER: {'✅ Chargé' if ner_extractor.loaded else '❌ Non chargé'}")
     if ner_extractor.loaded:
         model_info = ner_extractor.get_model_info()
@@ -73,6 +77,13 @@ async def startup_event():
         print(f"   • Sources: {', '.join(stats['sources'])}")
     
     print("=" * 80 + "\n")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Désenregistre le service d'Eureka à l'arrêt"""
+    if settings.EUREKA_ENABLED:
+        await EurekaService.deregister()
 
 
 @app.get("/", tags=["Root"])

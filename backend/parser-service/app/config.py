@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8001
     
+    # Eureka Service Discovery
+    EUREKA_SERVER_URL: str = "http://eureka-server:8761/eureka"
+    EUREKA_APP_NAME: str = "PARSER-SERVICE"
+    EUREKA_ENABLED: bool = True
+    
     class Config:
         env_file = ".env"
 

@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import get_db, engine, Base
 from app import schemas
 from app.services.lca_service import LCAService
+from app.services.eureka_service import EurekaService
 
 # Créer les tables
 Base.metadata.create_all(bind=engine)
@@ -56,6 +57,16 @@ async def startup_event():
     if lca_service.agribalyse_db.loaded:
         print(f"   • Produits: {len(lca_service.agribalyse_db.data) if lca_service.agribalyse_db.data is not None else 0}")
     print("=" * 80 + "\n")
+    # Enregistrer le service auprès d'Eureka
+    if settings.EUREKA_ENABLED:
+        await EurekaService.register()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Désenregistre le service d'Eureka à l'arrêt"""
+    if settings.EUREKA_ENABLED:
+        await EurekaService.deregister()
 
 
 @app.get("/", tags=["Root"])

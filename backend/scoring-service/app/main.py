@@ -11,6 +11,7 @@ from app.config import settings
 from app.database import get_db, engine, Base
 from app import schemas
 from app.services.scoring_service import ScoringService
+from app.services.eureka_service import EurekaService
 
 # Créer les tables
 Base.metadata.create_all(bind=engine)
@@ -46,6 +47,16 @@ async def startup_event():
     print(f"🤖 Classification Model: {'✅ Chargé' if scoring_service.models.classifier_loaded else '⚠️  Non entraîné'}")
     print(f"📊 Regression Model: {'✅ Chargé' if scoring_service.models.regressor_loaded else '⚠️  Non entraîné'}")
     print("=" * 80 + "\n")
+    # Enregistrer le service auprès d'Eureka
+    if settings.EUREKA_ENABLED:
+        await EurekaService.register()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Désenregistre le service d'Eureka à l'arrêt"""
+    if settings.EUREKA_ENABLED:
+        await EurekaService.deregister()
 
 
 @app.get("/", tags=["Root"])

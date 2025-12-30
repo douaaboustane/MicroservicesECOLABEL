@@ -16,6 +16,7 @@ from app.extractors.barcode_extractor import BarcodeExtractor
 from app.extractors.text_cleaner import TextCleaner
 from app.extractors.ner_extractor import NERExtractor
 from app.utils.file_handler import FileHandler
+from app.services.eureka_service import EurekaService
 
 # Créer les tables
 Base.metadata.create_all(bind=engine)
@@ -37,6 +38,20 @@ ner_extractor = NERExtractor()  # Modèle NER pour extraction avancée d'ingréd
 
 # Créer le dossier d'upload
 FileHandler.ensure_upload_dir()
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Enregistre le service auprès d'Eureka au démarrage"""
+    if settings.EUREKA_ENABLED:
+        await EurekaService.register()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Désenregistre le service d'Eureka à l'arrêt"""
+    if settings.EUREKA_ENABLED:
+        await EurekaService.deregister()
 
 
 @app.post("/product/parse", response_model=BatchParseResponse)
