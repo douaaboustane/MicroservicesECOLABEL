@@ -33,7 +33,7 @@ docker-compose down -v || true
 # Supprimer les conteneurs individuels s'ils existent encore
 docker rm -f parser-postgres nlp-postgres lca-postgres scoring-postgres api-postgres rabbitmq \
     parser-service nlp-ingredients-service lca-lite-service scoring-service \
-    api-gateway-service api-gateway-worker 2>/dev/null || true
+    api-gateway-service api-gateway-worker eureka-server 2>/dev/null || true
 
 # Démarrer les services (sans rebuild - images déjà construites)
 echo "Starting services with docker-compose (using existing images)..."
