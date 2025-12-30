@@ -136,7 +136,8 @@ pipeline {
                     
                     // Essayer d'utiliser withSonarQubeEnv, sinon utiliser les variables d'environnement globales
                     def sonarToken = env.SONAR_TOKEN ?: ''
-                    def sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
+                    // Mettre à jour sonarUrl pour Docker (host.docker.internal au lieu de localhost)
+                    sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
                     
                     if (!sonarToken) {
                         echo "WARNING: SONAR_TOKEN not found in environment variables"
