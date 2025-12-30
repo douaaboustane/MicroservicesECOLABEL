@@ -149,61 +149,74 @@ pipeline {
                         return
                     }
                     
-                    // Essayer d'utiliser withSonarQubeEnv, sinon utiliser les variables d'environnement globales
-                    def sonarToken = env.SONAR_TOKEN ?: ''
-                    // Mettre à jour sonarUrl pour Docker (host.docker.internal au lieu de localhost)
-                    sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
-                    
-                    if (!sonarToken) {
-                        echo "WARNING: SONAR_TOKEN not found in environment variables"
-                        echo "Trying to get token from SonarQube configuration..."
-                        try {
-                            withSonarQubeEnv('SonarQube') {
-                                sonarToken = env.SONAR_TOKEN ?: ''
-                                sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
+                    // Utiliser withSonarQubeEnv pour que le Quality Gate puisse trouver le task ID
+                    try {
+                        withSonarQubeEnv('SonarQube') {
+                            // Les variables SONAR_HOST_URL et SONAR_TOKEN sont maintenant disponibles depuis la config Jenkins
+                            def sqUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
+                            def sqToken = env.SONAR_TOKEN ?: ''
+                            
+                            if (!sqToken) {
+                                echo "WARNING: SONAR_TOKEN is not configured in SonarQube server configuration!"
+                                echo "Skipping SonarQube analysis. To enable it:"
+                                echo "  Configure SonarQube server in: Manage Jenkins → Configure System → SonarQube servers"
+                                echo "  Server name: 'SonarQube'"
+                                echo "  Server URL: http://host.docker.internal:9000"
+                                echo "  Add authentication token"
+                                return
                             }
-                        } catch (Exception e) {
-                            echo "WARNING: SonarQube not configured in Jenkins"
+                            
+                            echo "Using SonarQube configuration from Jenkins..."
+                            echo "SonarQube URL: ${sqUrl}"
+                            echo "Token configured: ${sqToken.take(10)}..."
+                            
+                            sh """
+                                # Convertir localhost en host.docker.internal pour Docker si nécessaire
+                                SONAR_URL="${sqUrl}"
+                                if echo "\${SONAR_URL}" | grep -q "localhost"; then
+                                    SONAR_URL=\$(echo "\${SONAR_URL}" | sed 's/localhost/host.docker.internal/g')
+                                    echo "Converted localhost to host.docker.internal: \${SONAR_URL}"
+                                fi
+                                
+                                # Exécuter le scanner SonarQube dans Docker
+                                # Le workspace est monté, donc report-task.txt sera créé dans le workspace
+                                docker run --rm \\
+                                    --add-host=host.docker.internal:host-gateway \\
+                                    -v "\$(pwd):/usr/src" \\
+                                    -w /usr/src \\
+                                    -e SONAR_HOST_URL="\${SONAR_URL}" \\
+                                    -e SONAR_TOKEN="${sqToken}" \\
+                                    sonarsource/sonar-scanner-cli:latest \\
+                                    -Dsonar.projectKey=ecolabel-ms \\
+                                    -Dsonar.sources=backend \\
+                                    -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
+                                    -Dsonar.python.version=3.11 \\
+                                    -Dsonar.sourceEncoding=UTF-8 \\
+                                    -Dsonar.login="${sqToken}" || {
+                                    echo "ERROR: SonarQube analysis failed"
+                                    echo "Check that the token is valid and has the correct permissions"
+                                    exit 1
+                                }
+                                
+                                # Vérifier que report-task.txt a été créé
+                                if [ -f ".scannerwork/report-task.txt" ]; then
+                                    echo "SonarQube analysis completed. Task ID saved in .scannerwork/report-task.txt"
+                                    # Copier à la racine pour que waitForQualityGate puisse le trouver
+                                    cp .scannerwork/report-task.txt report-task.txt 2>/dev/null || true
+                                else
+                                    echo "WARNING: report-task.txt not found in .scannerwork/"
+                                fi
+                            """
                         }
+                    } catch (Exception e) {
+                        echo "WARNING: SonarQube analysis failed or SonarQube not configured: ${e.getMessage()}"
+                        echo "Skipping SonarQube analysis - pipeline will continue"
+                        echo "To enable SonarQube:"
+                        echo "  1. Configure SonarQube server in: Manage Jenkins → Configure System → SonarQube servers"
+                        echo "  2. Server name should be 'SonarQube'"
+                        echo "  3. Server URL: http://host.docker.internal:9000 (or your SonarQube URL)"
+                        echo "  4. Add authentication token"
                     }
-                    
-                    if (!sonarToken) {
-                        echo "WARNING: SONAR_TOKEN is not configured!"
-                        echo "Skipping SonarQube analysis. To enable it:"
-                        echo "  Set SONAR_TOKEN in: Manage Jenkins → Configure System → Global properties → Environment variables"
-                        return
-                    }
-                    
-                    sh """
-                        echo "Using SonarQube configuration..."
-                        echo "SonarQube URL: ${sonarUrl}"
-                        echo "Token configured: ${sonarToken.take(10)}..."
-                        
-                        # Convertir localhost en host.docker.internal pour Docker
-                        SONAR_URL="${sonarUrl}"
-                        if echo "\${SONAR_URL}" | grep -q "localhost"; then
-                            SONAR_URL=\$(echo "\${SONAR_URL}" | sed 's/localhost/host.docker.internal/g')
-                            echo "Converted localhost to host.docker.internal: \${SONAR_URL}"
-                        fi
-                        
-                        docker run --rm \\
-                            --add-host=host.docker.internal:host-gateway \\
-                            -v "\$(pwd):/usr/src" \\
-                            -w /usr/src \\
-                            -e SONAR_HOST_URL="\${SONAR_URL}" \\
-                            -e SONAR_TOKEN="${sonarToken}" \\
-                            sonarsource/sonar-scanner-cli:latest \\
-                            -Dsonar.projectKey=ecolabel-ms \\
-                            -Dsonar.sources=backend \\
-                            -Dsonar.exclusions="**/__pycache__/**,**/tests/**,**/venv/**,**/node_modules/**,**/models/**,**/data/**,**/*.pyc,**/migrations/**,**/scripts/**,**/test_*.py" \\
-                            -Dsonar.python.version=3.11 \\
-                            -Dsonar.sourceEncoding=UTF-8 \\
-                            -Dsonar.login="${sonarToken}" || {
-                            echo "ERROR: SonarQube analysis failed"
-                            echo "Check that the token is valid and has the correct permissions"
-                            exit 1
-                        }
-                    """
                 }
             }
         }
