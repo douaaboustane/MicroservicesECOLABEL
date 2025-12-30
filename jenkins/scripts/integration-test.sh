@@ -71,13 +71,50 @@ docker-compose up -d
 
 # Attendre que les services soient prêts
 echo "Waiting for services to be ready..."
-sleep 10
+sleep 15
 
-# Health checks pour chaque service
+# Vérifier que les bases de données sont prêtes
 echo ""
-echo "=== Health Checks ==="
+echo "=== Database Health Checks ==="
+echo "Checking api-db..."
+MAX_DB_ATTEMPTS=20
+DB_ATTEMPT=1
+while [ $DB_ATTEMPT -le $MAX_DB_ATTEMPTS ]; do
+    if docker exec api-postgres pg_isready -U ecolabel > /dev/null 2>&1; then
+        echo "api-db is ready"
+        break
+    fi
+    if [ $DB_ATTEMPT -eq $MAX_DB_ATTEMPTS ]; then
+        echo "WARNING: api-db health check failed"
+    fi
+    echo "Waiting for api-db... ($DB_ATTEMPT/$MAX_DB_ATTEMPTS)"
+    sleep 3
+    DB_ATTEMPT=$((DB_ATTEMPT + 1))
+done
 
-check_service "API Gateway" "http://localhost:8000/health" || echo "WARNING: API Gateway health check failed"
+# Health checks pour chaque service avec plus de tentatives pour l'API Gateway
+echo ""
+echo "=== Service Health Checks ==="
+
+# API Gateway a besoin de plus de temps car il dépend de plusieurs services
+echo "Checking API Gateway (may take longer as it depends on multiple services)..."
+MAX_GATEWAY_ATTEMPTS=30
+GATEWAY_ATTEMPT=1
+while [ $GATEWAY_ATTEMPT -le $MAX_GATEWAY_ATTEMPTS ]; do
+    if curl -f "http://localhost:8000/health" > /dev/null 2>&1; then
+        echo "API Gateway is healthy"
+        break
+    fi
+    if [ $GATEWAY_ATTEMPT -eq $MAX_GATEWAY_ATTEMPTS ]; then
+        echo "WARNING: API Gateway health check failed after ${MAX_GATEWAY_ATTEMPTS} attempts"
+        echo "Checking API Gateway logs..."
+        docker logs api-gateway-service --tail 50 || true
+    fi
+    echo "Waiting for API Gateway... ($GATEWAY_ATTEMPT/$MAX_GATEWAY_ATTEMPTS)"
+    sleep 5
+    GATEWAY_ATTEMPT=$((GATEWAY_ATTEMPT + 1))
+done
+
 check_service "Parser Service" "http://localhost:8001/health" || echo "WARNING: Parser Service health check failed"
 check_service "NLP Service" "http://localhost:8003/health" || echo "WARNING: NLP Service health check failed"
 check_service "LCA Service" "http://localhost:8004/health" || echo "WARNING: LCA Service health check failed"
