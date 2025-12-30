@@ -260,10 +260,34 @@ pipeline {
         stage('Build Docker Images') {
             steps {
                 script {
-                    echo "=== Images already built during Unit Tests ==="
-                    echo "Skipping rebuild - images were created and tested in previous stage"
+                    echo "=== Building Docker Images ==="
+                    echo "Some images were built during Unit Tests, building missing ones..."
+                    
+                    def services = ['parser-service', 'nlp-ingredients-service', 'lca-lite-service', 'scoring-service', 'api-gateway-service']
+                    services.each { service ->
+                        sh """
+                            SERVICE_DIR=\${WORKSPACE}/backend/${service}
+                            IMAGE_NAME="${DOCKER_IMAGE_PREFIX}-${service}"
+                            
+                            # Vérifier si l'image existe déjà (construite pendant les tests)
+                            if docker images | grep -q "\${IMAGE_NAME}.*latest"; then
+                                echo "Image \${IMAGE_NAME}:latest already exists - skipping build"
+                            else
+                                echo "Building \${IMAGE_NAME}:latest..."
+                                if [ -d "\${SERVICE_DIR}" ] && [ -f "\${SERVICE_DIR}/Dockerfile" ]; then
+                                    cd "\${SERVICE_DIR}"
+                                    DOCKER_BUILDKIT=1 docker build -t \${IMAGE_NAME}:latest .
+                                    docker tag \${IMAGE_NAME}:latest \${IMAGE_NAME}:${IMAGE_TAG}
+                                    echo "Successfully built \${IMAGE_NAME}:latest"
+                                else
+                                    echo "WARNING: Dockerfile not found for ${service}, skipping"
+                                fi
+                            fi
+                        """
+                    }
+                    
                     sh """
-                        echo "Verifying images exist..."
+                        echo "=== Verifying all images exist ==="
                         docker images | grep ${DOCKER_IMAGE_PREFIX} || echo "WARNING: Some images may be missing"
                     """
                 }
