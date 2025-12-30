@@ -37,9 +37,39 @@ docker rm -f parser-postgres nlp-postgres lca-postgres scoring-postgres api-post
 
 # Démarrer les services (sans rebuild - images déjà construites)
 echo "Starting services with docker-compose (using existing images)..."
+
+# Démarrer d'abord les services de base (DB, RabbitMQ, Eureka)
+echo "Starting base services (databases, RabbitMQ, Eureka)..."
+docker-compose up -d parser-db nlp-db lca-db scoring-db api-db rabbitmq eureka-server
+
+# Attendre que RabbitMQ soit prêt (important car d'autres services en dépendent)
+echo "Waiting for RabbitMQ to be ready..."
+MAX_RABBITMQ_ATTEMPTS=30
+RABBITMQ_ATTEMPT=1
+while [ $RABBITMQ_ATTEMPT -le $MAX_RABBITMQ_ATTEMPTS ]; do
+    if docker exec rabbitmq rabbitmq-diagnostics ping > /dev/null 2>&1; then
+        echo "RabbitMQ is ready"
+        break
+    fi
+    if [ $RABBITMQ_ATTEMPT -eq $MAX_RABBITMQ_ATTEMPTS ]; then
+        echo "WARNING: RabbitMQ health check failed after ${MAX_RABBITMQ_ATTEMPTS} attempts"
+        echo "Checking RabbitMQ logs..."
+        docker logs rabbitmq --tail 50 || true
+    fi
+    echo "Waiting for RabbitMQ... ($RABBITMQ_ATTEMPT/$MAX_RABBITMQ_ATTEMPTS)"
+    sleep 5
+    RABBITMQ_ATTEMPT=$((RABBITMQ_ATTEMPT + 1))
+done
+
+# Attendre un peu plus pour que les bases de données soient prêtes
+echo "Waiting for databases to be ready..."
+sleep 15
+
+# Maintenant démarrer les services applicatifs
+echo "Starting application services..."
 docker-compose up -d
 
-# Attendre que les services soient prêts (réduit de 30s à 10s)
+# Attendre que les services soient prêts
 echo "Waiting for services to be ready..."
 sleep 10
 
