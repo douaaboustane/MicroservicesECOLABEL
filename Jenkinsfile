@@ -3,8 +3,9 @@ pipeline {
     
     environment {
         // Configuration Docker
-        DOCKER_REGISTRY = 'localhost:5000'
-        DOCKER_IMAGE_PREFIX = 'ecolabel'
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_USERNAME = "${env.DOCKER_USERNAME ?: 'douaaboustane'}"
+        DOCKER_IMAGE_PREFIX = "${DOCKER_USERNAME}/ecolabel"
         
         // Configuration Python
         PYTHON_VERSION = '3.11'
@@ -342,14 +343,35 @@ pipeline {
             }
             steps {
                 script {
-                    def services = ['parser-service', 'nlp-ingredients-service', 'lca-lite-service', 'scoring-service', 'api-gateway-service']
-                    services.each { service ->
+                    // Authentification Docker Hub
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
-                            echo "Pushing ${service}..."
-                            docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || true
-                            docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}-${service}:latest || true
-                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || echo "WARNING: Push failed (registry may not be configured)"
-                            docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_PREFIX}-${service}:latest || echo "WARNING: Push failed (registry may not be configured)"
+                            echo "Logging in to Docker Hub..."
+                            echo \${DOCKER_PASS} | docker login ${DOCKER_REGISTRY} -u \${DOCKER_USER} --password-stdin || {
+                                echo "WARNING: Docker Hub login failed. Check credentials in Jenkins."
+                                exit 0
+                            }
+                        """
+                        
+                        def services = ['parser-service', 'nlp-ingredients-service', 'lca-lite-service', 'scoring-service', 'api-gateway-service']
+                        services.each { service ->
+                            sh """
+                                echo "Pushing ${service} to Docker Hub..."
+                                # Tag avec le format Docker Hub: username/image-name:tag
+                                docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || true
+                                docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_IMAGE_PREFIX}-${service}:latest || true
+                                
+                                # Push vers Docker Hub
+                                docker push ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || echo "WARNING: Push failed for ${service}:${IMAGE_TAG}"
+                                docker push ${DOCKER_IMAGE_PREFIX}-${service}:latest || echo "WARNING: Push failed for ${service}:latest"
+                                
+                                echo "Successfully pushed ${service}"
+                            """
+                        }
+                        
+                        sh """
+                            echo "Logging out from Docker Hub..."
+                            docker logout ${DOCKER_REGISTRY} || true
                         """
                     }
                 }
