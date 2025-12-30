@@ -110,29 +110,44 @@ pipeline {
                     echo "DEBUG: Branch name: ${env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'}"
                     
                     // Vérifier que SonarQube est accessible
-                    def sonarUrl = env.SONAR_HOST_URL ?: 'http://localhost:9000'
+                    // Utiliser host.docker.internal pour accéder à l'hôte depuis le conteneur Jenkins
+                    def sonarUrl = env.SONAR_HOST_URL ?: 'http://host.docker.internal:9000'
                     
-                    // Vérifier la disponibilité de SonarQube
-                    sh '''
-                        echo "Checking SonarQube availability at http://localhost:9000..."
-                        # Attendre que SonarQube soit prêt (max 2 minutes)
-                        MAX_ATTEMPTS=24
-                        ATTEMPT=1
-                        while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
-                            if curl -f "http://localhost:9000/api/system/status" > /dev/null 2>&1; then
-                                echo "SonarQube is ready"
-                                break
-                            fi
-                            if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-                                echo "ERROR: SonarQube is not accessible at http://localhost:9000"
-                                echo "Please ensure SonarQube is running: docker-compose -f docker-compose.sonarqube.yml up -d"
-                                exit 1
-                            fi
-                            echo "Waiting for SonarQube... ($ATTEMPT/$MAX_ATTEMPTS)"
-                            sleep 5
-                            ATTEMPT=$((ATTEMPT + 1))
-                        done
-                    '''
+                    // Vérifier la disponibilité de SonarQube (non-bloquant)
+                    def sonarAvailable = false
+                    try {
+                        sh '''
+                            echo "Checking SonarQube availability at http://host.docker.internal:9000..."
+                            # Attendre que SonarQube soit prêt (max 2 minutes)
+                            MAX_ATTEMPTS=12
+                            ATTEMPT=1
+                            while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+                                if curl -f "http://host.docker.internal:9000/api/system/status" > /dev/null 2>&1; then
+                                    echo "SonarQube is ready"
+                                    exit 0
+                                fi
+                                if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+                                    echo "WARNING: SonarQube is not accessible at http://host.docker.internal:9000"
+                                    echo "Skipping SonarQube analysis. To enable it:"
+                                    echo "  docker-compose -f docker-compose.sonarqube.yml up -d"
+                                    exit 0
+                                fi
+                                echo "Waiting for SonarQube... ($ATTEMPT/$MAX_ATTEMPTS)"
+                                sleep 5
+                                ATTEMPT=$((ATTEMPT + 1))
+                            done
+                        '''
+                        sonarAvailable = true
+                    } catch (Exception e) {
+                        echo "WARNING: SonarQube health check failed: ${e.getMessage()}"
+                        echo "Skipping SonarQube analysis - pipeline will continue"
+                        sonarAvailable = false
+                    }
+                    
+                    if (!sonarAvailable) {
+                        echo "Skipping SonarQube analysis - service not available"
+                        return
+                    }
                     
                     // Essayer d'utiliser withSonarQubeEnv, sinon utiliser les variables d'environnement globales
                     def sonarToken = env.SONAR_TOKEN ?: ''
@@ -153,7 +168,10 @@ pipeline {
                     }
                     
                     if (!sonarToken) {
-                        error("SONAR_TOKEN is not configured! Please set it in: Manage Jenkins → Configure System → Global properties → Environment variables (Name: SONAR_TOKEN)")
+                        echo "WARNING: SONAR_TOKEN is not configured!"
+                        echo "Skipping SonarQube analysis. To enable it:"
+                        echo "  Set SONAR_TOKEN in: Manage Jenkins → Configure System → Global properties → Environment variables"
+                        return
                     }
                     
                     sh """
