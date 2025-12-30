@@ -332,7 +332,12 @@ pipeline {
             when {
                 anyOf {
                     branch 'main'
+                    branch 'origin/main'
                     branch 'develop'
+                    expression { 
+                        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'
+                        return branchName.contains('main') || branchName.contains('develop')
+                    }
                 }
             }
             steps {
@@ -353,7 +358,14 @@ pipeline {
         
         stage('Deploy') {
             when {
-                branch 'main'
+                anyOf {
+                    branch 'main'
+                    branch 'origin/main'
+                    expression { 
+                        def branchName = env.BRANCH_NAME ?: env.GIT_BRANCH ?: 'unknown'
+                        return branchName.contains('main')
+                    }
+                }
             }
             steps {
                 script {
