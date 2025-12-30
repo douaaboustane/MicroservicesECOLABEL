@@ -347,10 +347,12 @@ pipeline {
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                             echo "Logging in to Docker Hub..."
-                            echo \${DOCKER_PASS} | docker login ${DOCKER_REGISTRY} -u \${DOCKER_USER} --password-stdin || {
-                                echo "WARNING: Docker Hub login failed. Check credentials in Jenkins."
-                                exit 0
+                            echo \${DOCKER_PASS} | docker login docker.io -u \${DOCKER_USER} --password-stdin || {
+                                echo "ERROR: Docker Hub login failed. Check credentials in Jenkins."
+                                echo "Make sure 'docker-hub-credentials' is configured with your Docker Hub username and access token."
+                                exit 1
                             }
+                            echo "Successfully logged in to Docker Hub as \${DOCKER_USER}"
                         """
                         
                         def services = ['parser-service', 'nlp-ingredients-service', 'lca-lite-service', 'scoring-service', 'api-gateway-service']
@@ -359,36 +361,48 @@ pipeline {
                                 echo "Pushing ${service} to Docker Hub..."
                                 
                                 # L'image source est construite avec le préfixe complet (douaaboustane/ecolabel-{service})
+                                IMAGE_NAME="${DOCKER_IMAGE_PREFIX}-${service}"
+                                
                                 # Vérifier que l'image existe
-                                if docker images | grep -q "${DOCKER_IMAGE_PREFIX}-${service}.*latest"; then
-                                    # Tag avec le tag de version
-                                    docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || {
-                                        echo "WARNING: Failed to tag ${service}:${IMAGE_TAG}"
-                                    }
+                                if docker images | grep -q "${IMAGE_NAME}.*latest"; then
+                                    echo "Found image: ${IMAGE_NAME}:latest"
+                                    
+                                    # Tag avec le tag de version (si pas déjà taggé)
+                                    if ! docker images | grep -q "${IMAGE_NAME}.*${IMAGE_TAG}"; then
+                                        echo "Tagging ${IMAGE_NAME}:latest as ${IMAGE_NAME}:${IMAGE_TAG}..."
+                                        docker tag ${IMAGE_NAME}:latest ${IMAGE_NAME}:${IMAGE_TAG} || {
+                                            echo "ERROR: Failed to tag ${IMAGE_NAME}:${IMAGE_TAG}"
+                                            exit 1
+                                        }
+                                    fi
                                     
                                     # Push vers Docker Hub (format: username/image-name:tag)
-                                    echo "Pushing ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG}..."
-                                    docker push ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || {
-                                        echo "WARNING: Push failed for ${service}:${IMAGE_TAG}"
+                                    # Utiliser le format complet avec docker.io pour éviter les problèmes de résolution
+                                    echo "Pushing ${IMAGE_NAME}:${IMAGE_TAG} to docker.io..."
+                                    docker push ${IMAGE_NAME}:${IMAGE_TAG} || {
+                                        echo "ERROR: Push failed for ${IMAGE_NAME}:${IMAGE_TAG}"
+                                        exit 1
                                     }
                                     
-                                    echo "Pushing ${DOCKER_IMAGE_PREFIX}-${service}:latest..."
-                                    docker push ${DOCKER_IMAGE_PREFIX}-${service}:latest || {
-                                        echo "WARNING: Push failed for ${service}:latest"
+                                    echo "Pushing ${IMAGE_NAME}:latest to docker.io..."
+                                    docker push ${IMAGE_NAME}:latest || {
+                                        echo "ERROR: Push failed for ${IMAGE_NAME}:latest"
+                                        exit 1
                                     }
                                     
                                     echo "Successfully pushed ${service}"
                                 else
-                                    echo "WARNING: Image ${DOCKER_IMAGE_PREFIX}-${service}:latest not found"
+                                    echo "ERROR: Image ${IMAGE_NAME}:latest not found"
                                     echo "Available images:"
-                                    docker images | grep ecolabel || echo "No ecolabel images found"
+                                    docker images | grep -E "(ecolabel|douaaboustane)" || echo "No matching images found"
+                                    exit 1
                                 fi
                             """
                         }
                         
                         sh """
                             echo "Logging out from Docker Hub..."
-                            docker logout ${DOCKER_REGISTRY} || true
+                            docker logout docker.io || true
                         """
                     }
                 }
