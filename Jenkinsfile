@@ -357,15 +357,32 @@ pipeline {
                         services.each { service ->
                             sh """
                                 echo "Pushing ${service} to Docker Hub..."
-                                # Tag avec le format Docker Hub: username/image-name:tag
-                                docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || true
-                                docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_IMAGE_PREFIX}-${service}:latest || true
                                 
-                                # Push vers Docker Hub
-                                docker push ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || echo "WARNING: Push failed for ${service}:${IMAGE_TAG}"
-                                docker push ${DOCKER_IMAGE_PREFIX}-${service}:latest || echo "WARNING: Push failed for ${service}:latest"
-                                
-                                echo "Successfully pushed ${service}"
+                                # L'image source est construite avec le préfixe complet (douaaboustane/ecolabel-{service})
+                                # Vérifier que l'image existe
+                                if docker images | grep -q "${DOCKER_IMAGE_PREFIX}-${service}.*latest"; then
+                                    # Tag avec le tag de version
+                                    docker tag ${DOCKER_IMAGE_PREFIX}-${service}:latest ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || {
+                                        echo "WARNING: Failed to tag ${service}:${IMAGE_TAG}"
+                                    }
+                                    
+                                    # Push vers Docker Hub (format: username/image-name:tag)
+                                    echo "Pushing ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG}..."
+                                    docker push ${DOCKER_IMAGE_PREFIX}-${service}:${IMAGE_TAG} || {
+                                        echo "WARNING: Push failed for ${service}:${IMAGE_TAG}"
+                                    }
+                                    
+                                    echo "Pushing ${DOCKER_IMAGE_PREFIX}-${service}:latest..."
+                                    docker push ${DOCKER_IMAGE_PREFIX}-${service}:latest || {
+                                        echo "WARNING: Push failed for ${service}:latest"
+                                    }
+                                    
+                                    echo "Successfully pushed ${service}"
+                                else
+                                    echo "WARNING: Image ${DOCKER_IMAGE_PREFIX}-${service}:latest not found"
+                                    echo "Available images:"
+                                    docker images | grep ecolabel || echo "No ecolabel images found"
+                                fi
                             """
                         }
                         
