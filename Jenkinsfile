@@ -344,7 +344,7 @@ pipeline {
             steps {
                 script {
                     // Authentification Docker Hub
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    withCredentials([usernamePassword(credentialsId: 'docker-registry-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh """
                             echo "Logging in to Docker Hub..."
                             echo \${DOCKER_PASS} | docker login docker.io -u \${DOCKER_USER} --password-stdin || {
