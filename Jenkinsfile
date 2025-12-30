@@ -185,6 +185,7 @@ pipeline {
                             exit 1
                         }
                     """
+                }
             }
         }
         
