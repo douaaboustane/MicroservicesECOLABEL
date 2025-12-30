@@ -1,3 +1,7 @@
+
+
+
+[![Watch the video]("C:\Users\doaa\Downloads\videoDEMO.mp4")]
 EcoLabel - Système d'Évaluation Écologique de Produits Alimentaires
 Description du Projet
 EcoLabel est une plateforme microservices permettant l'évaluation écologique automatisée de produits alimentaires à partir de photos. Le système analyse les images de produits, extrait les informations textuelles, identifie les ingrédients et calcule un score écologique basé sur l'analyse du cycle de vie (LCA).
