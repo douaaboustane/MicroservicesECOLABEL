@@ -110,15 +110,29 @@ done
 
 # Attendre un peu plus pour que les bases de données soient prêtes
 echo "Waiting for databases to be ready..."
-sleep 15
+sleep 20
 
 # Maintenant démarrer les services applicatifs
 echo "Starting application services..."
 docker-compose up -d
 
-# Attendre que les services soient prêts
-echo "Waiting for services to be ready..."
-sleep 15
+# Attendre que les services soient prêts et vérifier leur statut
+echo "Waiting for services to start..."
+sleep 20
+
+# Vérifier que les conteneurs sont bien démarrés
+echo ""
+echo "=== Checking container status ==="
+for container in parser-service nlp-ingredients-service lca-lite-service scoring-service api-gateway-service; do
+    if docker ps | grep -q "${container}"; then
+        STATUS=$(docker ps --format "{{.Status}}" --filter "name=${container}")
+        echo "✅ ${container}: ${STATUS}"
+    else
+        echo "❌ ${container}: Not running"
+        echo "Last logs:"
+        docker logs "${container}" --tail 10 2>&1 || echo "Could not retrieve logs"
+    fi
+done
 
 # Vérifier que les bases de données sont prêtes
 echo ""
