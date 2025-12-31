@@ -44,6 +44,3 @@ Parser Service: http://localhost:8001
 LCA Service: http://localhost:8002
 NLP Service: http://localhost:8003
 Scoring Service: http://localhost:8004
-
- la base de données
-docker exec -it parser-postgres psql -U ecolabel -d ecolabel
